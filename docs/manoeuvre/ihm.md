@@ -294,6 +294,33 @@ Le compteur de nœuds exclut les isolés.
   `nodale` par `/api/nodale_to_detaillee`) : il prend les mêmes nœuds et couleurs
   que le schéma détaillé obtenu.
 
+#### Restitution iso-aware : vrais nœuds vs ouvrages isolés
+
+Un **ouvrage isolé** (départ déconnecté, sans barre) n'est **pas** un nœud
+électrique. La façade libTOPO, elle, le compte comme une composante connexe :
+une cible « 2 nœuds + 2 ouvrages isolés » parfaitement réalisée était autrefois
+restituée « obtenu **4** nœuds, visé 2 » — trompeur. Le verdict est désormais
+**recomposé côté IHM** (`Session.nodale_to_detaillee` →
+`_decompose_realisation`, fonction pure) en **deux questions distinctes** :
+
+1. **Ouvrages isolés** — sont-ils **exactement ceux attendus** ? (`isoles_ok`).
+   Le diagnostic liste les écarts : `isoles_manquants` (attendus déconnectés mais
+   finalement raccordés) et `isoles_inattendus` (déconnectés sans l'avoir prévu).
+2. **Vrais nœuds** — a-t-on les **mêmes ouvrages actifs par nœud** que la cible ?
+   (`noeuds_ok` = égalité des partitions des seuls départs *raccordés*).
+
+`is_verified` = les deux. Le message décompose le compte
+(`_fmt_noeuds_isoles`) : **« obtenu 2 nœud(s) + 2 ouvrage(s) isolé(s),
+visé … »** au lieu de « 4 nœuds », et le badge du schéma cible (`nbB`) ne
+compte que les **vrais nœuds** (`nb_noeuds_reels`). Les ouvrages isolés
+restent restitués à part (liste **⚠ Ouvrages isolés** du volet nodal). Le
+message brut de l'algorithme (qui conflate les deux) reste disponible sous
+`algo_message` à des fins de diagnostic interne, mais n'est plus affiché tel
+quel. Couverture : `_decompose_realisation` / `_fmt_noeuds_isoles` en
+**logique pure** (`test_ihm_nodale_edit.py`) + **intégration** pypowsybl
+(décomposition, cohérence des isolés réalisés, isolation non réalisable,
+état tout-isolé non compté en nœuds — `test_ihm_nodale_integration.py`).
+
 > Les nœuds vides sont automatiquement retirés et la partition renumérotée
 > `N0…Nk` après chaque opération ; le nombre de nœuds cible est affiché en direct.
 
@@ -394,7 +421,7 @@ navigateur).
 | `POST /api/promote_cible` | — | `{initial_svg, nb_initial, svg, switches, nb_noeuds, vl, nodale_depart, nodale_cible}` | **Promeut la cible courante en nouvel état de départ** (chaînage sans scénario sauvegardé) ; met à jour les deux schémas + vues nodales |
 | `POST /api/cible` | — | `{svg, switches, nb_noeuds, nodale}` | Vue de la cible détaillée **courante** (sans la modifier) — pour revenir l'éditer alors qu'une séquence est calculée |
 | `POST /api/nodale` | — | `{nodale_depart, nodale_cible}` | Partitions nodales (cible initialisée = départ) ; `nodale_*` = `{groups[[…]], labels{id:nom}, types{id:type}, flows{id:MW}, dirs{id:TOP\|BOTTOM}, order{id:x}, colors{id:#hex}, isolated[…]}`. `labels`/`dirs`/`order`/`colors` sont **extraits du SLD** (libellés, côté, ordre horizontal et **couleur du nœud `topological_coloring`** identiques à la vue détaillée) ; `flows` provient d'une charge de réseau ; `isolated` liste les départs **déconnectés** (composante sans barre) |
-| `POST /api/nodale_to_detaillee` | `{groups, isolated?}` | `{svg, switches, nb_noeuds, is_verified, message, ecarts[], noeuds_non_realisables[[…]], nb_obtenu, nb_vise, nodale}` | Calcule la **topologie détaillée d'intérêt** réalisant la cible nodale `groups` (les `isolated` sont laissés hors partition) et la charge comme cible détaillée ; `nodale` = `{groups, colors, isolated}` de la topologie **réalisée** (resynchronise le volet nodal) |
+| `POST /api/nodale_to_detaillee` | `{groups, isolated?}` | `{svg, switches, nb_noeuds, is_verified, message, ecarts[], noeuds_non_realisables[[…]], nb_obtenu, nb_vise, nb_noeuds_reels, nb_isoles, nb_noeuds_vises, nb_isoles_vises, noeuds_ok, isoles_ok, isoles_obtenus[], isoles_attendus[], isoles_manquants[], isoles_inattendus[], algo_message, nodale}` | Calcule la **topologie détaillée d'intérêt** réalisant la cible nodale `groups` (les `isolated` sont laissés hors partition) et la charge comme cible détaillée. **Restitution iso-aware** : `is_verified`/`message` décomposent **vrais nœuds vs ouvrages isolés** (`nb_noeuds_reels` + `nb_isoles`, et non « N nœuds » conflatés ; `algo_message` = message brut libTOPO conservé pour diagnostic). `nodale` = `{groups, colors, isolated}` de la topologie **réalisée** (resynchronise le volet nodal) |
 | `POST /api/sequence` | `{mode?}` | `{verified, verified_detaillee, ecarts[], alertes[], message, nb_manoeuvres, manoeuvres[], n_steps, labels[], nb_final, matches_cible, edited, mode}` | Calcule la séquence (cible **détaillée**) ; `mode` = `"smooth"` (défaut) ou `"aggressive"` ; `alertes` = **bonne pratique non bloquante** (R10ter : > 1 ouvrage ré-aiguillé hors tension à la fois, mode smooth), affichée en badge ⚠ |
 | `GET /api/step?i=k` | — | `{svg, switches[], nb_noeuds, i, reached, nodale}` | Image d'animation de l'étape *k* (surlignée) **+ organes cliquables** ; `reached` = l'état affiché est la topologie cible ; `nodale` = **partition nodale de l'état détaillé de l'étape** (`{groups, colors, isolated}`) → le volet nodal **suit l'étape** (départ → … → cible) ; `null` si aucune séquence |
 | `POST /api/seq_insert` | `{step, id}` | `{goto, manoeuvres[], n_steps, labels[], nb_final, matches_cible, edited}` | Insère une manœuvre basculant `id` **après** l'étape `step` (conserve la suite) |
@@ -528,6 +555,7 @@ assert res.ecarts == []
 | **Replier** indépendamment les sections nodales **Départ** / **Cible** | Bouton **▾ / ▸** dans le `.stitle` → `toggleNsec()` (replie tout sauf le titre ; l'autre section prend l'espace) |
 | **Re-éditer la cible détaillée** après calcul de séquence + signaler l'obsolescence | Bouton **✎ Modifier la cible** (`/api/cible`) ; bandeau « la séquence n'atteint plus cet état cible » |
 | Demander un **calcul de topologie détaillée d'intérêt** depuis la cible nodale | `/api/nodale_to_detaillee` → façade `identifier_topologie_detaillee` (phase A, algo sélectionné), cible détaillée chargée |
+| **Restituer** le résultat en distinguant vrais nœuds et ouvrages isolés | `_decompose_realisation` : « obtenu 2 nœuds + 2 ouvrages isolés » (et non « 4 nœuds ») ; vérifie séparément les isolés (`isoles_ok`) et la partition des nœuds (`noeuds_ok`) ; front `nodComputeMsg` / badge `nb_noeuds_reels` |
 
 ---
 
@@ -575,12 +603,15 @@ assert res.ecarts == []
 - **Vue nodale — logique pure testable** : le parsing du SLD (`_parse_feeder_meta`
   pour libellés/direction/abscisse, `_parse_node_colors` pour les couleurs
   topologiques, `_decode_svg_id`), la détection des ouvrages isolés
-  (`_isolated_assets`, sur graphe NX) et la normalisation de partition
-  (`_normalize_groups`) sont des **fonctions de module pures**, testées sans réseau
+  (`_isolated_assets`, sur graphe NX), la normalisation de partition
+  (`_normalize_groups`) et la **décomposition iso-aware du verdict**
+  (`_decompose_realisation` / `_fmt_noeuds_isoles` : vrais nœuds vs ouvrages
+  isolés) sont des **fonctions de module pures**, testées sans réseau
   (`tests/manoeuvre/test_ihm_nodale_edit.py`). Le pipeline complet
   (`nodale_payload` / `nodale_state` / `nodale_to_detaillee`, cohérence détaillé ↔
-  nodal, isolés, rechargement de scénario) est couvert en **intégration** sur le
-  réseau `four_substations` (`tests/manoeuvre/test_ihm_nodale_integration.py`).
+  nodal, isolés, décomposition restituée, rechargement de scénario) est couvert en
+  **intégration** sur le réseau `four_substations`
+  (`tests/manoeuvre/test_ihm_nodale_integration.py`).
 
 ---
 

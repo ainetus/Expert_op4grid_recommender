@@ -65,12 +65,23 @@ Refonte ergonomique de l'IHM de manœuvre (`scripts/manoeuvre_ihm_assets/index.h
 - **Volet nodal** : sections **Départ/Cible repliables**, **ouvrages isolés en tête
   de cadre**, **↺ Réinitialiser** (reset complet détaillé + nodal), et **＋ Nœud**
   crée un nœud vide **persistant** (cible de dépose ; nœuds vides ignorés au calcul).
+- **Restitution iso-aware** du calcul de topologie détaillée d'intérêt : le verdict
+  **distingue les vrais nœuds électriques des ouvrages isolés** (départs
+  déconnectés) au lieu de les conflater. Une cible « 2 nœuds + 2 ouvrages isolés »
+  réalisée s'affiche désormais **« obtenu 2 nœuds + 2 ouvrages isolés »** (et non
+  « obtenu 4 nœuds »). `_decompose_realisation` (fonction pure) vérifie séparément
+  que les isolés sont **ceux attendus** (`isoles_ok`, avec diagnostic
+  `isoles_manquants` / `isoles_inattendus`) et que les nœuds ont les **mêmes
+  ouvrages actifs** (`noeuds_ok`) ; `nodale_to_detaillee` renvoie la décomposition
+  (`nb_noeuds_reels`, `nb_isoles`, …) et le badge ne compte que les vrais nœuds.
 - **Tests** : garde-fou de **structure du front** (`test_ihm_frontend_asset.py` :
   marqueurs requis présents / retirés absents, bloc script équilibré) ;
   `test_ihm_cache_and_api.py` (sélecteur de fichier, `promote_cible`, `content` de
   `/api/save` + `/api/save_sequence`, nœuds vides ignorés) ; `test_ihm_dataset.py`
   (`repo_pour_date`, dérivation du repo par année sur timestamps **et** load,
-  drapeau `hosted`).
+  drapeau `hosted`) ; décomposition iso-aware en **logique pure**
+  (`_decompose_realisation` / `_fmt_noeuds_isoles`, `test_ihm_nodale_edit.py`) +
+  **intégration** (`test_ihm_nodale_integration.py`).
 
 ---
 
