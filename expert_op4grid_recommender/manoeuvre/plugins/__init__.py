@@ -35,7 +35,7 @@ Plugger son algorithme (une phase suffit) ::
 
     pipe = PlanificateurTopologie(sequenceur="mon_algo", planificateur=None)
 
-Voir ``docs/manoeuvre_plugins.md`` pour les contrats complets, la composition
+Voir ``docs/architecture/plugins.md`` pour les contrats complets, la composition
 des phases et la publication par entry points.
 """
 

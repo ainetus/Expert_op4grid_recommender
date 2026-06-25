@@ -28,7 +28,7 @@ def _reaiguiller_vers_sjb(
     ont été générées.
 
     Le **type de boucle est déterminé par l'invariant de sécurité des
-    sectionneurs** (cf. docs/manoeuvre_regles.md) et non par une heuristique de
+    sectionneurs** (cf. docs/manoeuvre/regles.md) et non par une heuristique de
     phase :
 
     - **COURTE** si la barre cible et la (les) barre(s) actuelle(s) du départ

@@ -2,7 +2,7 @@
 """
 scripts/build_rte7000_blocks.py
 --------------------------------
-Pipeline « dataset topologies historiques » (cf. docs/plan_dataset_rte7000.md,
+Pipeline « dataset topologies historiques » (cf. docs/manoeuvre/dataset_rte7000/plan.md,
 phases 1-4) : depuis un historique d'états d'organes par poste, ce script
 
 1. reconstitue les chronologies de topologies détaillées par poste ;

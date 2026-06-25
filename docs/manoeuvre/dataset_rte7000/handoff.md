@@ -11,7 +11,7 @@
 
 ### Commit `a26531a` — Couche pluggable des 3 phases de calcul (`manoeuvre/plugins/`)
 
-Trois contrats substituables (PEP 544, doc `docs/manoeuvre_plugins.md`) :
+Trois contrats substituables (PEP 544, doc `docs/architecture/plugins.md`) :
 
 - **Phase A** `IdentificateurTopologieDetaillee.identifier(poste, topo_cible)` :
   topologie **nodale** cible → topologie **détaillée** cible ;
@@ -40,7 +40,7 @@ nodal = A, panneau Séquence = B), badge `algo <nom>`. Tests :
 `tests/manoeuvre/test_ihm_algo_selection.py` (7 cas, dont plugin menteur
 démasqué dans la payload).
 
-### Commit `109950d` — Plan de travail publication (`docs/plan_dataset_rte7000.md`)
+### Commit `109950d` — Plan de travail publication (`docs/manoeuvre/dataset_rte7000/plan.md`)
 
 Plan en 6 phases (audit → extraction → blocs → tagging → dataset de test /
 benchmark → publication), avec logique, risques/parades, jalons. À lire en
@@ -83,7 +83,7 @@ L'allowlist couvre `huggingface.co` **et** le backend Xet
 (`cas-bridge.xethub.hf.co`) : téléchargement opérationnel. Les anciennes
 étapes 1-6 de ce document sont **exécutées** sur la journée 2021-01-03
 complète — résultats, échantillons et reproduction dans
-`docs/dataset_rte7000/2021-01-03/README.md`, synthèse dans le plan
+`docs/manoeuvre/dataset_rte7000/2021-01-03/README.md`, synthèse dans le plan
 (« Première passe réelle exécutée »).
 
 À savoir pour reproduire/étendre :
@@ -129,12 +129,12 @@ opérateur ×1,10 (smooth) / ×1,06 (aggressive).
 
 | Quoi | Où |
 |---|---|
-| Plan publication 6 phases | `docs/plan_dataset_rte7000.md` |
-| **Guide dataset construit + exécution locale** | `docs/dataset_rte7000/GUIDE.md` |
-| Campagne 7 journées / 3 ans (table, benchmarks) | `docs/dataset_rte7000/README.md` |
+| Plan publication 6 phases | `docs/manoeuvre/dataset_rte7000/plan.md` |
+| **Guide dataset construit + exécution locale** | `docs/manoeuvre/dataset_rte7000/GUIDE.md` |
+| Campagne 7 journées / 3 ans (table, benchmarks) | `docs/manoeuvre/dataset_rte7000/README.md` |
 | Orchestrateur multi-journées | `scripts/process_dgitt_days.sh` |
-| Résultats première passe réelle (2021-01-03) | `docs/dataset_rte7000/2021-01-03/` |
-| Doc couche pluggable | `docs/manoeuvre_plugins.md` |
+| Résultats première passe réelle (2021-01-03) | `docs/manoeuvre/dataset_rte7000/2021-01-03/` |
+| Doc couche pluggable | `docs/architecture/plugins.md` |
 | Doc module manoeuvre (conventions, invariants) | `expert_op4grid_recommender/manoeuvre/CLAUDE.md` |
 | Pipeline dataset | `expert_op4grid_recommender/manoeuvre/dataset/` |
 | Téléchargeur dataset HF | `scripts/download_dgitt_subset.py` |

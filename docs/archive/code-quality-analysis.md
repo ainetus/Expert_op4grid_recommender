@@ -82,7 +82,7 @@ except (ImportError, Exception) as e:
 
 - `except (ImportError, Exception)` is equivalent to `except Exception` — the `ImportError` is redundant.
 - The nested bare `except: pass` silently swallows any error inside the error handler.
-- Runtime monkey-patching `grid2op.Backend.Backend.get_shunt_setpoint` at package import time is a code smell; it also becomes dead weight once the `grid2op → pypowsybl` migration (see `MIGRATION_PLAN.md`) lands.
+- Runtime monkey-patching `grid2op.Backend.Backend.get_shunt_setpoint` at package import time is a code smell; it also becomes dead weight once the `grid2op → pypowsybl` migration (see `docs/archive/MIGRATION_PLAN.md`) lands.
 
 **Action (P1)**: Narrow the exception type, route through `logging`, and reassess whether the monkey-patch is still needed.
 
@@ -293,6 +293,14 @@ Moved the following files out of the repository root using `git mv` (preserving 
 
 `MIGRATION_PLAN.md` was left at the repo root — it is still active while the
 grid2op → pypowsybl migration is ongoing.
+
+> **Update (documentation reorganization)**: the `docs/` tree was later
+> reorganized into topical subfolders. `MIGRATION_PLAN.md` now lives at
+> [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) (this file's sibling in `docs/archive/`),
+> and the redundant test-config guides (`SETUP_SUMMARY.md`,
+> `HOW_TO_SKIP_VISUALIZATION.md`, `DEBUG_CONFIG_OVERRIDE.md`) were consolidated
+> into [`../../tests/README_CONFIG.md`](../../tests/README_CONFIG.md). See the
+> documentation index at [`../README.md`](../README.md).
 
 The moved script uses absolute package imports (`from expert_op4grid_recommender.pypowsybl_backend import …`), so it continues to work from its new location under an editable install (`pip install -e .`).
 

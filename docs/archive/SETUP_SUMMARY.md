@@ -1,5 +1,10 @@
 # Configuration Override Setup - Summary
 
+> **Archived** — historical session summary kept for the record. The canonical,
+> maintained documentation of the test config override (including how to skip
+> visualization and troubleshooting) now lives in
+> [`../../tests/README_CONFIG.md`](../../tests/README_CONFIG.md).
+
 ## What Was Done
 
 I've set up your PyCharm Expert Recommender project so that tests automatically use `tests/config_test.py` instead of `expert_op4grid_recommender/config.py`.

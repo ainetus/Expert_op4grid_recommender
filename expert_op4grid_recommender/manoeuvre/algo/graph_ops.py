@@ -107,7 +107,7 @@ def _own_breakers_to_sjb(
     **Disjoncteur d'ensemble de la cellule** à manœuvrer pour mettre le départ
     hors tension lors d'un ré-aiguillage en boucle longue.
 
-    Règle (cf. docs/manoeuvre_regles.md, R7) : on n'ouvre que le DJ situé
+    Règle (cf. docs/manoeuvre/regles.md, R7) : on n'ouvre que le DJ situé
     **côté sélecteurs de barre** (entre les sectionneurs d'aiguillage et le
     reste de la cellule). Ouvrir ce seul disjoncteur dé-énergise la cellule et
     suffit pour basculer ensuite les sectionneurs ; on n'ouvre **pas** les

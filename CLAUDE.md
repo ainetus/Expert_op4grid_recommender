@@ -12,6 +12,20 @@
 
 ---
 
+## Documentation
+
+A full, categorized documentation index lives in
+[`docs/README.md`](docs/README.md). Quick map:
+
+- **Architecture**: `docs/architecture/` — overview, simulation pipeline, recommender-model contract, maneuver plugin phases
+- **Recommender action designs**: `docs/recommender/` — antenna graph, load shedding, renewable curtailment, superposition theorem
+- **Maneuver module**: `docs/manoeuvre/` — module, rules, IHM, N-busbar, optimisations, plan
+- **RTE-7000 dataset**: `docs/manoeuvre/dataset_rte7000/` — campaign, guide, plan, handoff
+- **Archive**: `docs/archive/` — migration plan, code-quality analysis, setup summary
+- **Release notes**: `docs/release-notes/`
+
+---
+
 ## Quick Start Commands
 
 ```bash
@@ -319,7 +333,7 @@ tests/
 ├── test_islanding_mw.py                 # Islanding MW quantification (v0.1.8+)
 ├── test_environment_detection.py        # Env detection logic
 ├── test_antenna_graph.py                # Antenna (islanded-pocket) overflow graph
-│                                        # (see docs/antenna_overflow_graph.md)
+│                                        # (see docs/recommender/antenna_overflow_graph.md)
 └── test_visualization_filtering.py      # Visualization filters
 ```
 
@@ -357,7 +371,7 @@ pytest tests/test_ActionClassifier.py::test_specific  # Single test
 **Current version**: `0.1.9` (see `CHANGELOG.md` for full history)
 
 ### Active Migration: Grid2Op → Pure pypowsybl
-See `MIGRATION_PLAN.md` for details. The goal is to remove `grid2op` dependency.
+See `docs/archive/MIGRATION_PLAN.md` for details. The goal is to remove `grid2op` dependency.
 
 **Completed:**
 - `pypowsybl_backend/` module with grid2op-compatible interfaces
@@ -374,7 +388,7 @@ See `MIGRATION_PLAN.md` for details. The goal is to remove `grid2op` dependency.
 
 - **Load Shedding & Renewable Curtailment** (`v0.1.9`): `find_relevant_load_shedding` and `find_relevant_renewable_curtailment` in `action_evaluation/discovery.py` identify candidates on downstream nodes of constrained paths. Controlled by `MIN_LOAD_SHEDDING`, `MIN_RENEWABLE_CURTAILMENT`, `LOAD_SHEDDING_MARGIN`, `RENEWABLE_CURTAILMENT_MARGIN`, `RENEWABLE_ENERGY_SOURCES`. Deeply optimized for large networks (#76).
 - **Pathlib migration** (`v0.1.9`): all base directories and file paths use `pathlib.Path` for cross-platform robustness.
-- **Superposition Theorem** (`v0.1.8`): `utils/superposition.py` quantifies topological and PST action impacts using virtual flows and delta-theta. Integrated into analysis results. **Generalized Superposition Theorem (GST)** (unreleased): `compute_combined_pair_gst` + `is_injection_action` extend pair estimation to load shedding / curtailment / redispatch (injection changes), reported with `beta=1.0` so the existing reconstruction is unchanged. See `docs/superposition_module.md` §10.
+- **Superposition Theorem** (`v0.1.8`): `utils/superposition.py` quantifies topological and PST action impacts using virtual flows and delta-theta. Integrated into analysis results. **Generalized Superposition Theorem (GST)** (unreleased): `compute_combined_pair_gst` + `is_injection_action` extend pair estimation to load shedding / curtailment / redispatch (injection changes), reported with `beta=1.0` so the existing reconstruction is unchanged. See `docs/recommender/superposition_module.md` §10.
 - **Islanding MW impact** (`v0.1.8`): islanding detection now reports disconnected MW.
 - **PST Support** (`v0.1.7+`): phase-shifter transformer tap variations, atomized PST actions from REPAS JSON. `find_relevant_pst_actions` in discovery. Grid2Op conversion support. PST asset-ID matching handles REPAS quirks (leading dots, `_inc1`/`_dec2` suffixes).
 - **Direct XIIDM loading** (`v0.1.8_post1`): `main.py` accepts a direct `.xiidm` file path.
@@ -411,7 +425,7 @@ See `MIGRATION_PLAN.md` for details. The goal is to remove `grid2op` dependency.
 | Modify expert rules | `action_evaluation/rules.py` |
 | Modify action scoring | `action_evaluation/discovery.py` |
 | Change graph analysis | `graph_analysis/builder.py`, `processor.py` |
-| Antenna (islanded-pocket) graph | `graph_analysis/antenna_graph.py`, `processor.py` (`extract_antenna_context`, `pre_process_antenna_graph`); see `docs/antenna_overflow_graph.md` |
+| Antenna (islanded-pocket) graph | `graph_analysis/antenna_graph.py`, `processor.py` (`extract_antenna_context`, `pre_process_antenna_graph`); see `docs/recommender/antenna_overflow_graph.md` |
 | pypowsybl migration | `pypowsybl_backend/*`, `environment_pypowsybl.py` |
 | Adjust rho calculation | `pypowsybl_backend/observation.py`, `overflow_analysis.py` |
 | Configure monitoring | `config.py` (`LINES_MONITORING_FILE`, `IGNORE_LINES_MONITORING`) |

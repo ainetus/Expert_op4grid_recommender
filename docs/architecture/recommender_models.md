@@ -8,7 +8,7 @@ model can rely on.
 
 For the **app-side integration** (registry, built-in random examples,
 backend service patches, frontend wiring, filter chain) see
-`marota/co-study4grid` — `docs/recommender_models.md`.
+`marota/co-study4grid` — `docs/architecture/recommender_models.md`.
 
 ---
 

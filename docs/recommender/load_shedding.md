@@ -6,6 +6,11 @@
 
 ---
 
+> **Voir aussi** : [`renewable_curtailment.md`](renewable_curtailment.md)
+> (analogue **amont** — écrêtement de production renouvelable),
+> [`superposition_module.md`](superposition_module.md) (estimation d'impact via le
+> théorème de superposition généralisé). Index : [`../README.md`](../README.md).
+
 ## 1. Objectif
 
 Introduire un nouveau type d'action corrective : le **load shedding** (effacement / délestage de consommation). L'idée est de réduire la consommation sur des noeuds bien choisis du réseau pour ramener le taux de charge (rho) de la ligne contrainte sous son seuil admissible.

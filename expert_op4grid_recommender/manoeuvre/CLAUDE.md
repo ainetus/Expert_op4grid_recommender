@@ -18,7 +18,7 @@ de couplage.
 | `troncons.py`  | Etapes 1.3-1.4 : `construire_tronconnement()` — barres, troncons, attribution |
 | `topologie.py` | Etapes 1.5-1.6 : `TopologieNodale`, `PosteTopologique`, `attribuer_noeuds()` |
 | `algo/`        | Phase 2 : `determiner_topo_complete_cible()` — package en couches (voir ci-dessous) |
-| `plugins/`     | Couche **pluggable** : contrats des 3 phases (identification nodale→détaillée, séquencement détaillée→manœuvres, planification bout-en-bout), registre + entry points, façade `PlanificateurTopologie` avec vérification indépendante. Doc : `docs/manoeuvre_plugins.md` |
+| `plugins/`     | Couche **pluggable** : contrats des 3 phases (identification nodale→détaillée, séquencement détaillée→manœuvres, planification bout-en-bout), registre + entry points, façade `PlanificateurTopologie` avec vérification indépendante. Doc : `docs/architecture/plugins.md` |
 | `__init__.py`  | API publique                                     |
 
 ### Package `algo/` (Phase 2, eclate depuis l'ancien `algo.py`)
@@ -52,7 +52,7 @@ La façade `PlanificateurTopologie` compose les phases manquantes et applique
 détaillés, règle du sectionneur, alertes R10ter) à tout résultat, y compris
 tiers. Plugins externes par entry points (groupe
 `expert_op4grid_recommender.manoeuvre`, nom `<phase>.<nom>`). Détails et
-exemples : `docs/manoeuvre_plugins.md` ; tests :
+exemples : `docs/architecture/plugins.md` ; tests :
 `tests/manoeuvre/test_plugins_interface.py`.
 
 L'**IHM est migrée sur cette façade** : sélecteurs « Algo » par phase
@@ -74,14 +74,14 @@ python scripts/render_carrip3_sld.py --grid path/to/grid.xiidm
 # IHM web de test interactif (Flask, dependance optionnelle) :
 #   choisir un poste, modifier DJ/SA, valider/sauver la cible, calculer +
 #   animer la sequence, sauvegarder scenarios et sequences. Doc complete :
-#   docs/manoeuvre_ihm.md
+#   docs/manoeuvre/ihm.md
 pip install -e ".[ihm]"   # guillemets requis sous zsh (sinon: pip install flask)
 python scripts/manoeuvre_ihm.py --grid path/to/grid.xiidm   # http://localhost:8000
 
 # Mode dataset RTE 7000 (sans --grid) : source les situations par date/heure
 # dans le dataset HF OpenSynth/D-GITT-RTE7000-* (telechargement a la demande).
 # Couche dans manoeuvre/dataset/source.py ; deploiement HF Space dans
-# Dockerfile + deploy/huggingface/. Doc : docs/manoeuvre_ihm.md (S 1bis).
+# Dockerfile + deploy/huggingface/. Doc : docs/manoeuvre/ihm.md (S 1bis).
 python scripts/manoeuvre_ihm.py --dataset                   # http://localhost:8000
 ```
 
@@ -156,7 +156,7 @@ Les tests unitaires (`test_graph_cellules.py`) utilisent le reseau standard
 
 ### Filets de regression (refactors a iso-comportement)
 
-Poses avant la campagne d'optimisation (cf. `docs/manoeuvre_optimisations.md`),
+Poses avant la campagne d'optimisation (cf. `docs/manoeuvre/optimisations.md`),
 ces tests garantissent l'invariance du comportement :
 
 - `test_golden_sequences.py` — **golden** de bout en bout : sequence ordonnee
@@ -193,7 +193,7 @@ Poses avant de scinder `algo.py` en sous-modules (un refactor structurel
 
 Plusieurs chemins chauds sont **memoises** ; toute modification doit preserver
 ces invariants (sinon les goldens cassent). Detail et gains :
-`docs/manoeuvre_optimisations.md`.
+`docs/manoeuvre/optimisations.md`.
 
 - **Index lookups** (`_switch_edge_index`, `_equipment_node_index`) : caches
   `G.graph` construits en une passe ; coordonnees **topologiques** (valides sur
@@ -216,7 +216,7 @@ que l'attribut `open`.
 ## Etat algo (phase 2)
 
 > **Postes à N jeux de barres (≥ 3 JdB)** : état d'avancement et reste à faire
-> consolidés dans **`docs/postes_n_jeux_de_barres.md`**.
+> consolidés dans **`docs/manoeuvre/postes_n_jeux_de_barres.md`**.
 
 `determiner_topo_complete_cible(poste, topo_cible)` traite :
 - postes 1 barre (cas trivial) ;
@@ -348,7 +348,7 @@ Toutes les regles metier du sequencement (R1-R14 : faisabilite, distinction
 sectionnement/couplage, tronconnement, placement noeud->SJB, boucle courte/
 longue, DJ d'ensemble de cellule, regle du sectionneur de barre, ordonnancement
 listeDordre, controle court-circuit, verification) sont tracees avec leurs
-fonctions et tests dans **`docs/manoeuvre_regles.md`**.
+fonctions et tests dans **`docs/manoeuvre/regles.md`**.
 
 ### Convention de detection des barres
 

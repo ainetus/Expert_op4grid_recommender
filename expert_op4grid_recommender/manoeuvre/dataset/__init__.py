@@ -2,7 +2,7 @@
 manoeuvre/dataset — Construction du dataset « topologies historiques »
 =======================================================================
 
-Outillage du plan ``docs/plan_dataset_rte7000.md`` (phases 1 à 4) : à partir
+Outillage du plan ``docs/manoeuvre/dataset_rte7000/plan.md`` (phases 1 à 4) : à partir
 d'un **historique d'états d'organes par poste** (p. ex. le dataset
 Hugging Face ``OpenSynth/D-GITT-RTE7000-2021``), ce package :
 

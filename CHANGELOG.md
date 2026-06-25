@@ -43,7 +43,7 @@ situations réseau directement dans le dataset RTE 7000** par date/heure, et se
 ### IHM de manœuvre : refonte UX du panneau + volet nodal
 
 Refonte ergonomique de l'IHM de manœuvre (`scripts/manoeuvre_ihm_assets/index.html`
-+ `scripts/manoeuvre_ihm.py`). Doc : `docs/manoeuvre_ihm.md` ; figure annotée :
++ `scripts/manoeuvre_ihm.py`). Doc : `docs/manoeuvre/ihm.md` ; figure annotée :
 `docs/manoeuvre/manoeuvre_ihm_overview.svg`.
 
 - **Situation réseau en deux onglets** *📁 Local* (chemin `.xiidm` + **sélecteur de
@@ -114,7 +114,7 @@ the overload.
 - **Visualization** (`main.py`): the analysis graph spans the full grid (the
   gray healthy lines anchor the root for `find_hubs`); the viewer renders a
   pocket-focused copy via `focus_overflow_graph_on_pocket`.
-- See `docs/antenna_overflow_graph.md`. Tests in `tests/test_antenna_graph.py`.
+- See `docs/recommender/antenna_overflow_graph.md`. Tests in `tests/test_antenna_graph.py`.
 
 ---
 
@@ -190,7 +190,7 @@ changes with each other — previously these pairs were skipped. Based on
   pair shape against ground-truth grid2op DC simulations (~1e-6 MW), plus a
   `TestGstIsAcAnchored` class pinning that the beta RHS and the reconstruction
   read the (AC) observation values verbatim.
-- **Docs**: `docs/superposition_module.md` §10 now documents the AC-anchoring of
+- **Docs**: `docs/recommender/superposition_module.md` §10 now documents the AC-anchoring of
   the GST (AC values used throughout; the superposition law is DC-exact only, so
   the AC residual is structural) and the accuracy profile (topology+injection ≡
   topology-only EST; the global max-rho line can flip between near-equal low-flow
@@ -303,7 +303,7 @@ changes with each other — previously these pairs were skipped. Based on
   - `compute_combined_pairs(...)` runs the superposition theorem on the top-K reassessed actions to estimate the best pair without a full simulation.
   Works for *any* model that returns `{action_id: action_object}` — third-party models inherit the same downstream pipeline for free.
 - **`run_analysis_step2_discovery(context, recommender=None, params=None)`** (`expert_op4grid_recommender/main.py`, PR #90): new model-aware step-2 entry point. When `recommender` is omitted it defaults to `ExpertRecommender()`. The expert action filter (`_run_expert_action_filter`) runs idempotently whenever the overflow graph is in context, populating `context["filtered_candidate_actions"]` — both for `ExpertRecommender` (which still applies the rule chain internally) and for sampling models that want to restrict their pool.
-- **Library-side contract documentation** (`docs/recommender_models.md`, PR #90): step-by-step guide to writing a third-party recommender — minimal ABC implementation, registry pattern, DTO field reference, capability flags, integration with the reassessment phase.
+- **Library-side contract documentation** (`docs/architecture/recommender_models.md`, PR #90): step-by-step guide to writing a third-party recommender — minimal ABC implementation, registry pattern, DTO field reference, capability flags, integration with the reassessment phase.
 - **Comprehensive test coverage** (PR #90, all mock-based, no live pypowsybl / grid2op required):
   - `tests/test_models_base.py` — ABC contract enforcement, default `params_spec()` returning `[]`, DTO defaults & private context handling.
   - `tests/test_models_expert.py` — `ExpertRecommender` metadata, `requires_overflow_graph=True`, full `params_spec()` enumeration, fallback to `_context` on `recommend()`.
@@ -359,7 +359,7 @@ changes with each other — previously these pairs were skipped. Based on
 - **`SimulationEnvironment` caching** (PR #72): Avoids redundant environment initialisation on repeated analysis calls.
 - **`skip_enrichment` parameter** on the detection phase (PR #72): Bypasses redundant action enrichment during the initial overload detection step.
 - **New tests**: `test_graph_analysis.py` (PR #78) for graph analysis helpers and `test_environment_pypowsybl.py` (PR #78) for pypowsybl environment setup logic.
-- **Design and quality documents** (PR #71, PR #77): `docs/renewable_curtailment_design.md` (algorithm, scoring, data requirements) and `docs/code-quality-analysis.md` (static analysis snapshot: god-module inventory, testing gaps, TODO/FIXME catalogue).
+- **Design and quality documents** (PR #71, PR #77): `docs/recommender/renewable_curtailment.md` (algorithm, scoring, data requirements) and `docs/archive/code-quality-analysis.md` (static analysis snapshot: god-module inventory, testing gaps, TODO/FIXME catalogue).
 - **Type hints and docstrings** back-filled on `load_training_data.py`, `load_evaluation_data.py`, `repas.py`, `make_env_utils.py`, `make_assistant_env.py`, and `make_training_env.py` (PR #84).
 
 ### Changed

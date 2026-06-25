@@ -37,11 +37,11 @@ from typing import Optional
 
 from .dgitt import _charger_reseau, horodatage_depuis_nom
 
-#: dataset par défaut (année 2021 ; voir docs/dataset_rte7000/)
+#: dataset par défaut (année 2021 ; voir docs/manoeuvre/dataset_rte7000/)
 REPO_DEFAUT = "OpenSynth/D-GITT-RTE7000-2021"
 
 #: dates **identifiées intéressantes** (journées traitées dans
-#: docs/dataset_rte7000/ — « Table de campagne », 3 ans 2021-2023) — proposées
+#: docs/manoeuvre/dataset_rte7000/ — « Table de campagne », 3 ans 2021-2023) — proposées
 #: comme accès rapide dans l'IHM. Toute autre date reste saisissable. L'année
 #: d'une date détermine le repo HuggingFace (cf. ``repo_pour_date``).
 DATES_ECHANTILLON: tuple[str, ...] = (

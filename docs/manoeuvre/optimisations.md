@@ -5,10 +5,10 @@
 > refactor, **refactors à iso‑comportement** réalisés, **gains mesurés** et
 > **résultats**.
 >
-> Doc connexes : [`manoeuvre_module.md`](manoeuvre_module.md) ·
-> [`manoeuvre_regles.md`](manoeuvre_regles.md) ·
-> [`manoeuvre_ihm.md`](manoeuvre_ihm.md) ·
-> [`../expert_op4grid_recommender/manoeuvre/CLAUDE.md`](../expert_op4grid_recommender/manoeuvre/CLAUDE.md)
+> Doc connexes : [`manoeuvre_module.md`](module.md) ·
+> [`manoeuvre_regles.md`](regles.md) ·
+> [`manoeuvre_ihm.md`](ihm.md) ·
+> [`expert_op4grid_recommender/manoeuvre/CLAUDE.md`](../../expert_op4grid_recommender/manoeuvre/CLAUDE.md)
 
 ---
 

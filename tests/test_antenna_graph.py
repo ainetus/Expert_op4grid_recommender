@@ -7,7 +7,7 @@
 These tests are self-contained: they build a tiny grid2op-compatible
 observation by hand, so they need neither pypowsybl nor a real environment.
 
-See ``docs/antenna_overflow_graph.md`` for the design.
+See ``docs/recommender/antenna_overflow_graph.md`` for the design.
 """
 
 import types

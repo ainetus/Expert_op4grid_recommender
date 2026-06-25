@@ -2,7 +2,7 @@
 tests/manoeuvre/test_refacto_invariants.py
 --------------------------------------------
 Couverture des **invariants introduits par la campagne d'optimisation**
-(cf. ``docs/manoeuvre_optimisations.md``). Complète les filets T1–T4 en pinnant
+(cf. ``docs/manoeuvre/optimisations.md``). Complète les filets T1–T4 en pinnant
 directement, au niveau unitaire, les propriétés sur lesquelles repose
 l'iso-comportement des refactors :
 

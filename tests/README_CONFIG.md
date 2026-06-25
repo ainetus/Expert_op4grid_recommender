@@ -1,68 +1,99 @@
 # Test Configuration
 
-## Overview
+The test suite runs against a dedicated configuration module
+(`tests/config_test.py`) instead of the package configuration
+(`expert_op4grid_recommender/config.py`), so tests use stable, reproducible
+parameters and never touch production settings.
 
-This test suite uses a separate configuration file (`config_test.py`) instead of the package's main configuration file (`expert_op4grid_recommender/config.py`).
+## How it works
 
-## How It Works
-
-The `conftest.py` file in this directory contains a pytest fixture that automatically runs before any tests. This fixture replaces the package config module with the test config module by modifying `sys.modules`.
-
-### What This Means
-
-When any code in your tests (or code imported by your tests) does:
+`tests/conftest.py` installs the override **at import time** (before pytest
+loads any test module): it places `tests/config_test.py` into
+`sys.modules['expert_op4grid_recommender.config']`. From then on, any
 
 ```python
 from expert_op4grid_recommender import config
-```
-
-or
-
-```python
 from expert_op4grid_recommender.config import SOME_VARIABLE
 ```
 
-Python will actually import from `tests/config_test.py` instead of `expert_op4grid_recommender/config.py`.
+resolves to the test config — no test code or imports need to change.
 
-## Benefits
+> Doing the swap at import time (rather than in a fixture) matters: several test
+> modules import `expert_op4grid_recommender.main` at module level, which pulls
+> in `config` immediately. A fixture would run too late and the package config
+> would already be cached.
 
-1. **Test Isolation**: Tests use consistent configuration values without affecting the main package configuration
-2. **Reproducibility**: Test results are reproducible because they always use the same config
-3. **Flexibility**: You can easily modify `config_test.py` to set up specific test scenarios
-4. **Transparency**: No need to modify the main config file or pass config parameters around
+### Files
 
-## Files
+| File | Role |
+|---|---|
+| `config_test.py` | Configuration values used during tests |
+| `conftest.py` | Installs the config override at import time |
+| `test_config_override.py` | Verifies the override is active |
 
-- `config_test.py`: The configuration file used during testing
-- `conftest.py`: pytest configuration that sets up the config override
-- `test_config_override.py`: Simple tests to verify the override is working correctly
-
-## Running Tests
-
-Simply run pytest as normal:
+## Running and verifying
 
 ```bash
-pytest tests/test_expert_op4grid_analyzer.py::test_reproducibility
+pytest                                   # normal run — override is automatic
+pytest tests/test_config_override.py -v  # confirm the override is installed
 ```
 
-The config override happens automatically - no special flags or setup required!
+`test_config_override.py` checks that `config.__file__` points at
+`tests/config_test.py` and that the expected values (e.g.
+`DO_VISUALIZATION = False`) are in effect.
 
-## Verifying the Override
+## Modifying test configuration
 
-Run the verification test to ensure the override is working:
+Edit `tests/config_test.py`; every test picks up the change automatically.
+Commonly adjusted values:
 
-```bash
-pytest tests/test_config_override.py -v
+```python
+DATE = datetime(2024, 12, 7)
+TIMESTEP = 9
+LINES_DEFAUT = ["CHALOL61CPVAN"]
+DO_VISUALIZATION = False     # skip graph rendering in tests (see below)
+DO_CONSOLIDATE_GRAPH = False
+DO_SAVE_DATA_FOR_TEST = False
+USE_DC_LOAD_FLOW = False
+N_PRIORITIZED_ACTIONS = 5
 ```
 
-This will confirm that the test configuration is being used instead of the package configuration.
+## Skipping visualization in tests
 
-## Modifying Test Configuration
+Rendering overflow graphs is slow and produces stray artifact files, so the test
+config sets `DO_VISUALIZATION = False` while the package default
+(`expert_op4grid_recommender/config.py`) keeps `DO_VISUALIZATION = True`.
+`run_analysis()` in `main.py` honors the flag:
 
-To change configuration values for tests, simply edit `tests/config_test.py`. The changes will automatically be picked up by all tests.
+```python
+if config.DO_VISUALIZATION:
+    with Timer("Visualization"):
+        ...        # rendering
+else:
+    print("Skipping visualization (DO_VISUALIZATION=False)")
+```
 
-## Important Notes
+So tests skip rendering automatically, while running `main.py` directly still
+produces visualizations. To force visualization on for a specific test, set
+`DO_VISUALIZATION = True` in `config_test.py` (or within that test).
 
-- The config override is **session-scoped**, meaning it applies to all tests in a test run
-- The original package config remains unchanged - only the import behavior is modified
-- This approach works because pytest runs tests in a separate process
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| No override applied / wrong config used | Ensure `tests/conftest.py` exists; delete `tests/__pycache__` and stale `.pyc`; run `pytest --cache-clear`. |
+| Visualization still runs | Confirm `config_test.py` has `DO_VISUALIZATION = False` and that `main.py` keeps the `if config.DO_VISUALIZATION:` guard. |
+| Override verified but values look wrong | Make sure no test module caches config values at import time — read `config.X` inside the test/function, not at module top. |
+
+Inspect the override manually:
+
+```python
+from expert_op4grid_recommender import config
+print(config.__file__)          # -> .../tests/config_test.py
+print(config.DO_VISUALIZATION)  # -> False
+```
+
+## Notes
+
+- The override is session-scoped and applies to the whole test run.
+- The package config file is never modified — only import resolution changes.

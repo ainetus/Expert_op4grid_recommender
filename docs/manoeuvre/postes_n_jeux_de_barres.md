@@ -2,7 +2,7 @@
 
 > Extension du module `manoeuvre` des postes à **2 jeux de barres** vers **N JdB**
 > (3 et plus). Voir aussi `expert_op4grid_recommender/manoeuvre/CLAUDE.md`
-> (détails internes) et `docs/manoeuvre_ihm.md` (interface de test).
+> (détails internes) et `docs/manoeuvre/ihm.md` (interface de test).
 >
 > Suivi de la PR *« Postes à N jeux de barres : placement, séquenceur
 > connectivité-based et IHM »*.

@@ -87,7 +87,7 @@ Phase 3 — Integration au recommandeur  (hors scope immediat)
 > courte/longue, **règle du sectionneur** (anti court-circuit), création de
 > nœuds par ouverture de sectionnement, **cible détaillée imposée** (barre
 > exacte + vérification détaillée), **dégradation gracieuse** (écarts consignés).
-> Règles détaillées et tracées : `docs/manoeuvre_regles.md` (R1–R16). Limites
+> Règles détaillées et tracées : `docs/manoeuvre/regles.md` (R1–R16). Limites
 > restantes : omnibus complexes, contrôle de court-circuit fin (déphasage),
 > couplers non chaînés (≥ 3 barres en anneau).*
 
@@ -96,7 +96,7 @@ Phase 3 — Integration au recommandeur  (hors scope immediat)
 >   automatique nœud→SJB) et `determiner_manoeuvres_cible_detaillee` (cible
 >   détaillée + vérification + écarts) ;
 > - **IHM web** de test interactif (`scripts/manoeuvre_ihm.py`, Flask) —
->   cf. `docs/manoeuvre_ihm.md` ;
+>   cf. `docs/manoeuvre/ihm.md` ;
 > - rendu SLD avant/après (`scripts/render_carrip3_sld.py`).
 
 ### Tests disponibles
@@ -674,4 +674,4 @@ des tests (reconstruction du graphe NX depuis le JSON).
 
 ### Documentation module Python
 
-- `/Expert_op4grid_recommender-qwen3-5/docs/manoeuvre_module.md` — Documentation technique du module Python (etapes 1.1-1.2 + exemples sur postes reels)
+- `docs/manoeuvre/module.md` — Documentation technique du module Python (etapes 1.1-1.2 + exemples sur postes reels)

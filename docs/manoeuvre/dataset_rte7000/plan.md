@@ -335,7 +335,7 @@ reconstruction nodale→détaillée systématique). **Atout n°1 du papier sécu
 L'allowlist Xet est **ouverte** (`cas-bridge.xethub.hf.co` joignable) : le
 blocage réseau est levé. Constats et résultats de la première passe France
 entière (détail, échantillons et reproduction :
-**`docs/dataset_rte7000/2021-01-03/README.md`**) :
+**`docs/manoeuvre/dataset_rte7000/2021-01-03/README.md`**) :
 
 - **Téléchargement** : le client officiel `hf download` se bloque
   indéfiniment dans cet environnement (protocole xet partiellement joignable)

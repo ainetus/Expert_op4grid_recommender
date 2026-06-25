@@ -387,7 +387,7 @@ class Session:
         self.seq_edited: bool = False
         self.seq_mode: str = "smooth"
         # Algorithme sélectionné pour chaque phase pluggable (cf.
-        # ``manoeuvre.plugins`` et docs/manoeuvre_plugins.md) :
+        # ``manoeuvre.plugins`` et docs/architecture/plugins.md) :
         # - "identificateur" : nodale -> détaillée (« calculer la topologie
         #   détaillée d'intérêt ») ;
         # - "sequenceur"     : détaillée -> séquence de manœuvres ;
@@ -1468,7 +1468,7 @@ def api_manual_start():
 
 # ---------------------------------------------------------------------------
 # Front-end (HTML/CSS/JS) — externalisé dans manoeuvre_ihm_assets/index.html
-# (cf. docs/manoeuvre_ihm.md). Chargé au démarrage du module ; servi tel quel
+# (cf. docs/manoeuvre/ihm.md). Chargé au démarrage du module ; servi tel quel
 # par la route index(). Chemin résolu via __file__ (robuste au cwd).
 # ---------------------------------------------------------------------------
 _ASSETS_DIR = pathlib.Path(__file__).resolve().parent / "manoeuvre_ihm_assets"

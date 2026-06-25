@@ -1,7 +1,7 @@
 # Guide — Dataset « blocs de transition RTE 7000 » : contenu, observations, exécution locale
 
 > Ce guide documente le dataset **construit** par le pipeline du plan
-> `docs/plan_dataset_rte7000.md` à partir des instantanés publics
+> `docs/manoeuvre/dataset_rte7000/plan.md` à partir des instantanés publics
 > [`OpenSynth/D-GITT-RTE7000-{2021,2022,2023}`](https://huggingface.co/datasets/OpenSynth/D-GITT-RTE7000-2021)
 > (licence CDLA-permissive-2.0), les **observations** tirées de la campagne
 > 7 journées / 3 ans, et la **procédure pas-à-pas** pour reproduire et
@@ -94,7 +94,7 @@ Résultat de benchmark (`benchmark*.json`) : `resume` agrégé par algo/mode +
 
 ### Ce qui est versionné dans ce dépôt vs régénérable
 
-Versionné (ce dossier `docs/dataset_rte7000/`) : la table de campagne
+Versionné (ce dossier `docs/manoeuvre/dataset_rte7000/`) : la table de campagne
 (`campagne/campagne.json`), les stats par journée (top 50 postes), les
 résumés de benchmarks (agrégats + tous les blocs non triviaux), des
 échantillons de scénarios/séquences, la journée pilote détaillée

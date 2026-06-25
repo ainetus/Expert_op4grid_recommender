@@ -4,7 +4,7 @@ scripts/download_dgitt_subset.py
 ---------------------------------
 Télécharge un sous-ensemble du dataset Hugging Face
 ``OpenSynth/D-GITT-RTE7000-*`` (instantanés XIIDM du réseau France, cf.
-``docs/plan_dataset_rte7000.md``) **sans dépendre du client ``hf``** :
+``docs/manoeuvre/dataset_rte7000/plan.md``) **sans dépendre du client ``hf``** :
 listing par l'API ``/tree``, téléchargement HTTP simple via les URLs
 ``/resolve`` (redirigées vers le backend Xet ``cas-bridge.xethub.hf.co``),
 vérification **md5** contre les fichiers jumeaux ``*.md5`` du dataset.

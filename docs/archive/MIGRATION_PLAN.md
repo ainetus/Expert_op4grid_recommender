@@ -4,6 +4,11 @@
 
 This document outlines the migration strategy to remove the grid2op dependency from `expert_op4grid_recommender` and rely solely on pypowsybl for power system simulation.
 
+> **Related docs**: [`../architecture/simulation-pipeline.md`](../architecture/simulation-pipeline.md)
+> (the pypowsybl simulation pipeline this migration targets) and
+> [`../../expert_op4grid_recommender/pypowsybl_backend/README.md`](../../expert_op4grid_recommender/pypowsybl_backend/README.md)
+> (backend quick-start + API). Documentation index: [`../README.md`](../README.md).
+
 ## New Module Structure
 
 ```

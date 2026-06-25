@@ -2,7 +2,7 @@
 manoeuvre/dataset/timeline.py — Chronologie de topologies détaillées d'un poste
 et détection des blocs de transition.
 
-Concepts (cf. ``docs/plan_dataset_rte7000.md``, phases 1-2) :
+Concepts (cf. ``docs/manoeuvre/dataset_rte7000/plan.md``, phases 1-2) :
 
 - **Snapshot** : l'état détaillé d'un poste à un instant
   (``{switch_id: ouvert ?}`` — la forme de ``CibleDetaillee``) ;

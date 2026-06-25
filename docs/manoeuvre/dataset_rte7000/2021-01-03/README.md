@@ -3,7 +3,7 @@
 Premier traitement réel du dataset Hugging Face
 [`OpenSynth/D-GITT-RTE7000-2021`](https://huggingface.co/datasets/OpenSynth/D-GITT-RTE7000-2021)
 (licence CDLA-permissive-2.0) par le pipeline du plan
-`docs/plan_dataset_rte7000.md` — phases 1 à 4 exécutées sur **une journée
+`docs/manoeuvre/dataset_rte7000/plan.md` — phases 1 à 4 exécutées sur **une journée
 complète** (287 instantanés XIIDM à 5 min, ~5 865 postes, ~86 000 organes).
 
 ## Reproduction

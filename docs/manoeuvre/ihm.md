@@ -6,7 +6,7 @@
 > schéma unifilaire, et **sauvegarder scénarios et séquences** pour l'analyse et
 > la création de tests.
 
-Script : `scripts/manoeuvre_ihm.py` — Règles métier : `docs/manoeuvre_regles.md`.
+Script : `scripts/manoeuvre_ihm.py` — Règles métier : `docs/manoeuvre/regles.md`.
 
 ---
 
@@ -90,7 +90,7 @@ merge `main`, inerte tant que `HF_TOKEN`/`HF_SPACE` ne sont pas définis). Voir
 
 ## 2. Disposition de l'interface
 
-![Vue d'ensemble annotée de l'IHM de manœuvre sur un scénario de scission de nœud à CARRIP3](manoeuvre/manoeuvre_ihm_overview.svg)
+![Vue d'ensemble annotée de l'IHM de manœuvre sur un scénario de scission de nœud à CARRIP3](manoeuvre_ihm_overview.svg)
 
 > **Fig. — L'environnement interactif de manœuvre sur un scénario de scission de
 > nœud à CARRIP3** (départ : un nœud électrique ; cible : trois nœuds — barre 1
@@ -500,7 +500,7 @@ assert res.ecarts == []
 | **Télécharger** les fichiers sauvegardés quand l'IHM est déportée (Space) | `hosted` (`/api/dataset/config`) → `save()` / `saveSeq()` déclenchent un download du `content` renvoyé par `/api/save` / `/api/save_sequence` |
 | **Sauvegarder** la cible pour des tests par ailleurs | Scénario JSON (`/api/save`) avec topologies détaillées + nodales |
 | Demander la **séquence de manœuvres** départ → cible | `/api/sequence` → façade pluggable (`PlanificateurTopologie.sequencer`, phase B ; « libtopo » = `determiner_manoeuvres_cible_detaillee`) |
-| **Choisir l'algorithme** de chaque phase de calcul (natif « libtopo » + plugins enregistrés) | Sélecteurs « Algo » (panneau Séquence = phase B ; volet nodal = phase A) ; `GET/POST /api/algos` (disponibles par phase + sélection de session) ; badge `algo <nom>` dans le statut de séquence. Les plugins tiers (registre / entry points `expert_op4grid_recommender.manoeuvre`) apparaissent automatiquement — cf. `docs/manoeuvre_plugins.md` |
+| **Choisir l'algorithme** de chaque phase de calcul (natif « libtopo » + plugins enregistrés) | Sélecteurs « Algo » (panneau Séquence = phase B ; volet nodal = phase A) ; `GET/POST /api/algos` (disponibles par phase + sélection de session) ; badge `algo <nom>` dans le statut de séquence. Les plugins tiers (registre / entry points `expert_op4grid_recommender.manoeuvre`) apparaissent automatiquement — cf. `docs/architecture/plugins.md` |
 | **Verdicts indépendants de l'algorithme branché** | La façade revérifie chaque résultat (`verifier_sequence` : partition, écarts détaillés, règle du sectionneur, alertes R10ter) — un plugin déclarant à tort « vérifié » est démasqué dans l'IHM |
 | Affichage **textuel** de la séquence | Panneau « Séquence » |
 | **Animation** sur le SLD, manœuvre par manœuvre, organe mis en évidence | Contrôles ◀ ▶ ▶| + surlignage rouge (`/api/step`) |
@@ -591,11 +591,11 @@ assert res.ecarts == []
   connectivité-based). Les 7 postes 400 kV à 3 JdB identifiés (`SSV.OP7`,
   `TAVELP7`, `TRI.PP7`, `ARGOEP7`, `CHESNP7`, `COR.PP7`, `CERGYP7`) sont épinglés ;
   le champ de **recherche** donne accès à tout poste NODE_BREAKER de la situation.
-  État détaillé et limites restantes : `docs/postes_n_jeux_de_barres.md`.
+  État détaillé et limites restantes : `docs/manoeuvre/postes_n_jeux_de_barres.md`.
 - **Chargement de situation** : `/api/load_grid` recharge un `.xiidm` côté
   serveur ; l'upload de fichier depuis le navigateur n'est pas (encore) géré.
 - Les postes multi-sections (ex. CARRIP6, 2 barres × 3 sections) sont gérés ;
   les écarts détaillés résiduels éventuels sont affichés (dégradation gracieuse).
 - Les limites de l'algorithme lui-même sont documentées dans
-  `docs/manoeuvre_regles.md` (omnibus complexes, couplers non chaînés, etc.) et
-  `docs/postes_n_jeux_de_barres.md` (reste à faire séquenceur / discovery).
+  `docs/manoeuvre/regles.md` (omnibus complexes, couplers non chaînés, etc.) et
+  `docs/manoeuvre/postes_n_jeux_de_barres.md` (reste à faire séquenceur / discovery).

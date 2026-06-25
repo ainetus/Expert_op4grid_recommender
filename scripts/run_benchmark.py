@@ -3,7 +3,7 @@
 scripts/run_benchmark.py
 -------------------------
 Benchmark du séquenceur de manœuvres sur les **blocs de transition réels**
-extraits du dataset RTE 7000 (phase 4 du plan ``docs/plan_dataset_rte7000.md``).
+extraits du dataset RTE 7000 (phase 4 du plan ``docs/manoeuvre/dataset_rte7000/plan.md``).
 
 Pour chaque bloc de ``<dataset>/blocs.jsonl`` (produit par
 ``scripts/build_rte7000_blocks.py``) dont la structure du poste est

@@ -1,6 +1,6 @@
 """
 manoeuvre/dataset/tagging.py — Tagging du **type d'intervention** d'un bloc de
-transition (phase 3 du plan ``docs/plan_dataset_rte7000.md``).
+transition (phase 3 du plan ``docs/manoeuvre/dataset_rte7000/plan.md``).
 
 Taxonomie (multi-label) :
 

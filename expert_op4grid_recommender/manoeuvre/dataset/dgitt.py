@@ -4,7 +4,7 @@ manoeuvre/dataset/dgitt.py — Adaptateur de lecture du dataset
 pipeline (``TimelinePoste``).
 
 Schéma réel du dataset (inspecté le 2026-06-10, cf.
-``docs/plan_dataset_rte7000.md`` § « État d'avancement ») :
+``docs/manoeuvre/dataset_rte7000/plan.md`` § « État d'avancement ») :
 
 - **un fichier = un instantané** complet du réseau français en topologie
   *node-breaker*, au format **XIIDM** compressé **bzip2**, lisible par

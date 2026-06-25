@@ -1,7 +1,7 @@
 # Campagne D-GITT RTE 7000 — 7 journées, 3 ans (2021-2023)
 
 Traitement du dataset Hugging Face `OpenSynth/D-GITT-RTE7000-{2021,2022,2023}`
-par le pipeline du plan `docs/plan_dataset_rte7000.md` : **7 journées
+par le pipeline du plan `docs/manoeuvre/dataset_rte7000/plan.md` : **7 journées
 complètes** (≈ 2 000 instantanés XIIDM à 5 min), choisies pour contraster
 jours de semaine / week-end, saisons et années.
 

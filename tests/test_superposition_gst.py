@@ -200,7 +200,7 @@ class TestGstActionTypeSuperposition(unittest.TestCase):
         gaps observed for injection+injection on an AC grid are therefore a
         structural AC-nonlinearity effect (two large injections compound the
         reactive / voltage coupling), NOT a formula error — see
-        ``docs/superposition_module.md`` §10.
+        ``docs/recommender/superposition_module.md`` §10.
         """
         self.env.set_id(self.chronic_id)
         self.env.reset()
@@ -342,7 +342,7 @@ class TestGstIsAcAnchored(unittest.TestCase):
     """The GST is *AC-anchored*: both the injection superposition term and the
     injection-shifted beta right-hand side are read straight from the
     (AC) observation values — no DC quantity is recomputed. See
-    ``docs/superposition_module.md`` §10.
+    ``docs/recommender/superposition_module.md`` §10.
     """
 
     def test_beta_rhs_and_reconstruction_use_observation_values(self):

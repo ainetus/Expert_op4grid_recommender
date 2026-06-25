@@ -10,7 +10,7 @@
 
 Introduire un nouveau type d'action corrective : la **déconnexion de production renouvelable** (éolien ou solaire). L'idée est de réduire la production renouvelable sur des nœuds bien choisis du réseau, **en amont de la contrainte** sur le chemin contraint, pour diminuer le flux transitant sur la ligne surchargée et ramener le taux de charge (rho) sous son seuil admissible.
 
-Ce mécanisme est l'analogue **amont** du load shedding (effacement de consommation, voir `load_shedding_design.md`) qui cible les nœuds **aval**. Les deux se complètent :
+Ce mécanisme est l'analogue **amont** du load shedding (effacement de consommation, voir `load_shedding.md`) qui cible les nœuds **aval**. Les deux se complètent :
 
 | | Load Shedding | Renewable Curtailment |
 |---|---|---|
