@@ -931,19 +931,40 @@ async function nodCompute(){
   const groups=NOD.groups.filter(g=>g.length);
   const d=await api('/api/nodale_to_detaillee',{groups,isolated:NOD.isolated});
   stopAnim();S.manual=false;
-  // Charger la topologie détaillée d'intérêt comme cible (volet du bas).
+  // Charger la topologie détaillée d'intérêt comme cible (volet du bas). Le
+  // badge nb compte les **vrais nœuds électriques** (les ouvrages isolés sont
+  // restitués à part : voir la liste « Ouvrages isolés » du volet nodal).
   document.getElementById('diagBottom').innerHTML=d.svg;
-  document.getElementById('nbB').textContent=d.nb_noeuds;
+  document.getElementById('nbB').textContent=(d.nb_noeuds_reels!=null?d.nb_noeuds_reels:d.nb_noeuds);
   bind(d.switches);hideSeq();setValidated(false);
   // Resynchroniser la cible nodale sur la topologie détaillée RÉALISÉE
   // (partition + couleurs + isolés des nœuds obtenus).
   syncNodalCible(d.nodale);
+  // Restitution **iso-aware** : on décompose « N nœuds » en vrais nœuds + ouvrages
+  // isolés (ex. « 2 nœuds + 2 ouvrages isolés », et non « 4 nœuds »).
+  st.textContent=nodComputeMsg(d);}
+// Compose le verdict décomposé (vrais nœuds vs ouvrages isolés) du calcul de
+// topologie détaillée d'intérêt. Distingue 2 questions : les ouvrages isolés
+// sont-ils bien ceux attendus ? les nœuds ont-ils les mêmes ouvrages actifs ?
+function decFmt(nb_n,nb_i){let s=nb_n+' nœud(s)';if(nb_i)s+=' + '+nb_i+' ouvrage(s) isolé(s)';return s;}
+function isoNames(list){return (list||[]).map(eq=>NOD.labels[eq]||eq).join(', ');}
+function nodComputeMsg(d){
+  const st=document.getElementById('nodstatus');
+  const obt=decFmt(d.nb_noeuds_reels,d.nb_isoles), vis=decFmt(d.nb_noeuds_vises,d.nb_isoles_vises);
   let msg='';
-  if(d.is_verified){st.className='okv';msg='✓ Topologie détaillée d\'intérêt chargée comme cible ('+d.nb_obtenu+' nœud(s)'+(d.algo?', algo '+d.algo:'')+'). Validez puis calculez la séquence.';}
-  else{st.className='kov';msg='⚠ Cible partiellement réalisable (obtenu '+d.nb_obtenu+' / visé '+d.nb_vise+' nœud(s)). '+(d.message||'');
-    if(d.noeuds_non_realisables&&d.noeuds_non_realisables.length)msg+=' Nœuds non réalisables : '+d.noeuds_non_realisables.map(g=>g.join(',')).join(' | ')+'.';}
+  if(d.is_verified){st.className='okv';
+    msg='✓ Topologie d\'intérêt atteinte ('+obt+(d.algo?', algo '+d.algo:'')+'). Validez puis calculez la séquence.';
+  }else{st.className='kov';
+    msg='⚠ Cible partiellement réalisable — obtenu '+obt+', visé '+vis+'.';
+    if(d.noeuds_ok===false)msg+=' Les ouvrages actifs par nœud ne correspondent pas à la cible.';
+    if(d.isoles_ok===false){const det=[];
+      if(d.isoles_manquants&&d.isoles_manquants.length)det.push('attendus déconnectés mais raccordés : '+isoNames(d.isoles_manquants));
+      if(d.isoles_inattendus&&d.isoles_inattendus.length)det.push('déconnectés sans l\'avoir prévu : '+isoNames(d.isoles_inattendus));
+      if(det.length)msg+=' Ouvrages isolés — '+det.join(' ; ')+'.';}
+    if(d.noeuds_non_realisables&&d.noeuds_non_realisables.length)msg+=' Nœuds non réalisables : '+d.noeuds_non_realisables.map(g=>g.join(',')).join(' | ')+'.';
+  }
   if(d.ecarts&&d.ecarts.length)msg+=' Écarts : '+d.ecarts.join(' ; ')+'.';
-  st.textContent=msg;}
+  return msg;}
 init();
 </script>
 </body></html>

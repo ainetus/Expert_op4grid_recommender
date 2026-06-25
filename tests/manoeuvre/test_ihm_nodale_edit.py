@@ -235,3 +235,63 @@ def test_isolated_assets_all_when_busbar_isolated():
     G = _graph_iso_fixture()
     G.edges[0, 1]["open"] = True
     assert set(ihm._isolated_assets(G)) == {"L1", "L2", "L3"}
+
+
+# --------------------------------------------------------------------------
+# Restitution iso-aware : décomposition vrais nœuds vs ouvrages isolés
+# (_decompose_realisation, _fmt_noeuds_isoles) — logique pure
+# --------------------------------------------------------------------------
+
+def test_decompose_identity_verified():
+    # Mêmes nœuds, aucun isolé attendu ni obtenu -> vérifié.
+    dec = ihm._decompose_realisation([["A", "B", "C"]], [], [["A", "B", "C"]], [])
+    assert dec["is_verified"] is True
+    assert dec["noeuds_ok"] is True and dec["isoles_ok"] is True
+    assert dec["nb_noeuds_reels"] == 1 and dec["nb_isoles"] == 0
+
+
+def test_decompose_two_nodes_two_isolated_verified():
+    # Le cœur du correctif : 2 nœuds + 2 ouvrages isolés réalisés == cible.
+    # Ne doit PAS se restituer « 4 nœuds » (ordre des groupes/isolés indifférent).
+    dec = ihm._decompose_realisation(
+        noeuds_obtenus=[["A", "B"], ["C", "D"]], isoles_obtenus=["Y", "X"],
+        noeuds_attendus=[["C", "D"], ["A", "B"]], isoles_attendus=["X", "Y"])
+    assert dec["is_verified"] is True
+    assert dec["nb_noeuds_reels"] == 2 and dec["nb_isoles"] == 2
+    assert dec["nb_noeuds_vises"] == 2 and dec["nb_isoles_vises"] == 2
+    assert dec["isoles_obtenus"] == ["X", "Y"]      # trié
+    assert dec["isoles_manquants"] == [] and dec["isoles_inattendus"] == []
+
+
+def test_decompose_real_node_count_excludes_isolated_singletons():
+    # Les ouvrages isolés présentés comme singletons ne sont pas comptés en nœuds.
+    dec = ihm._decompose_realisation(
+        noeuds_obtenus=[["A", "B"], ["X"], ["Y"]], isoles_obtenus=["X", "Y"],
+        noeuds_attendus=[["A", "B"]], isoles_attendus=["X", "Y"])
+    assert dec["nb_noeuds_reels"] == 1       # {A,B} ; X et Y sont des isolés
+    assert dec["nb_isoles"] == 2
+    assert dec["is_verified"] is True
+
+
+def test_decompose_isolated_mismatch_flags_missing_and_unexpected():
+    # X attendu isolé mais raccordé ; Z déconnecté sans l'avoir prévu.
+    dec = ihm._decompose_realisation(
+        noeuds_obtenus=[["A", "B", "X"]], isoles_obtenus=["Z"],
+        noeuds_attendus=[["A", "B"]], isoles_attendus=["X"])
+    assert dec["isoles_ok"] is False and dec["is_verified"] is False
+    assert dec["isoles_manquants"] == ["X"]
+    assert dec["isoles_inattendus"] == ["Z"]
+
+
+def test_decompose_node_partition_mismatch():
+    # Mêmes ouvrages, mais répartis différemment entre nœuds.
+    dec = ihm._decompose_realisation(
+        noeuds_obtenus=[["A"], ["B", "C"]], isoles_obtenus=[],
+        noeuds_attendus=[["A", "B"], ["C"]], isoles_attendus=[])
+    assert dec["noeuds_ok"] is False and dec["is_verified"] is False
+
+
+def test_fmt_noeuds_isoles():
+    assert ihm._fmt_noeuds_isoles(2, 0) == "2 nœud(s)"
+    assert ihm._fmt_noeuds_isoles(2, 2) == "2 nœud(s) + 2 ouvrage(s) isolé(s)"
+    assert ihm._fmt_noeuds_isoles(0, 3) == "0 nœud(s) + 3 ouvrage(s) isolé(s)"

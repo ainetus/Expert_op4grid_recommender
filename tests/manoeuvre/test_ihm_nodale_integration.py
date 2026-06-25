@@ -144,6 +144,69 @@ def test_to_detaillee_isolated_kept_out_of_target(session):
 
 
 # --------------------------------------------------------------------------
+# Restitution iso-aware : décomposition vrais nœuds vs ouvrages isolés
+# (sont-ils ceux attendus ?) — le verdict ne doit plus conflater les deux.
+# --------------------------------------------------------------------------
+
+def test_to_detaillee_decomposition_fields_present(session):
+    p = session.nodale_payload(session.initial)
+    res = session.nodale_to_detaillee(p["groups"], p["isolated"])
+    for k in ("nb_noeuds_reels", "nb_isoles", "nb_noeuds_vises",
+              "nb_isoles_vises", "noeuds_ok", "isoles_ok", "isoles_obtenus",
+              "isoles_attendus", "isoles_manquants", "isoles_inattendus",
+              "algo_message"):
+        assert k in res
+
+
+def test_to_detaillee_identity_decomposes_as_one_node_no_isolated(session):
+    # Identité : 1 nœud, 0 isolé, vérifié — message décomposé (sans « obtenu N »).
+    p = session.nodale_payload(session.initial)
+    res = session.nodale_to_detaillee(p["groups"], p["isolated"])
+    assert res["is_verified"] is True
+    assert res["nb_noeuds_reels"] == 1 and res["nb_isoles"] == 0
+    assert "ouvrage(s) isolé(s)" not in res["message"]   # part isolés omise si nulle
+
+
+def test_to_detaillee_isoles_obtenus_matches_realised_state(session):
+    # Les isolés restitués == les isolés de l'état détaillé réalisé.
+    p = session.nodale_payload(session.initial)
+    res = session.nodale_to_detaillee(p["groups"], p["isolated"])
+    assert res["isoles_obtenus"] == sorted(res["nodale"]["isolated"])
+    # Décomposition cohérente : nb_noeuds_reels = nœuds réels (isolés exclus).
+    iso = set(res["nodale"]["isolated"])
+    reels = [[e for e in g if e not in iso] for g in res["nodale"]["groups"]]
+    assert res["nb_noeuds_reels"] == len([g for g in reels if g])
+
+
+def test_to_detaillee_unrealizable_isolation_flags_missing(session):
+    # Demander un départ isolé que le réseau ne peut pas déconnecter :
+    # restitution honnête (isoles_ok False + ouvrage signalé « manquant »),
+    # et la décomposition compte le nœud réel sans l'isolé non obtenu.
+    feeders = sorted(_feeders(session))
+    iso = [feeders[0]]
+    res = session.nodale_to_detaillee([feeders[1:]], iso)
+    assert res["nb_isoles_vises"] == 1
+    if not res["isoles_ok"]:                  # cas attendu sur ce réseau
+        assert feeders[0] in res["isoles_manquants"]
+        assert res["is_verified"] is False
+        assert "ouvrage(s) isolé(s)" in res["message"]
+
+
+def test_to_detaillee_all_isolated_not_counted_as_nodes(session):
+    # État réalisé = tout déconnecté : la décomposition ne doit PAS restituer
+    # « N nœuds » (un par départ), mais « 0 nœud + N ouvrages isolés ».
+    feeders = _feeders(session)
+    session.current = {sid: True for sid in session.initial}
+    state = session.nodale_state(session.current)
+    iso_obt = set(state["isolated"])
+    noeuds_obt = [[e for e in g if e not in iso_obt] for g in state["groups"]]
+    dec = ihm._decompose_realisation(noeuds_obt, iso_obt, [], list(feeders))
+    assert dec["nb_noeuds_reels"] == 0
+    assert dec["nb_isoles"] == len(feeders)
+    assert dec["is_verified"] is True        # cible = tout isolé, atteinte
+
+
+# --------------------------------------------------------------------------
 # Cohérence au rechargement de scénario (fix : nodal suit la cible détaillée)
 # --------------------------------------------------------------------------
 

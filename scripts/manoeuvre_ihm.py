@@ -286,6 +286,72 @@ def _isolated_assets(G: nx.Graph) -> list[str]:
     return iso
 
 
+def _decompose_realisation(noeuds_obtenus, isoles_obtenus,
+                           noeuds_attendus, isoles_attendus) -> dict:
+    """Décompose et compare une réalisation **nodale** à la cible visée, en
+    **distinguant les vrais nœuds électriques des ouvrages isolés** (départs
+    déconnectés, sans barre).
+
+    Motivation : un ouvrage isolé n'est **pas** un nœud électrique, mais la
+    façade libTOPO le compte comme une composante connexe à part entière. Une
+    cible « 2 nœuds + 2 ouvrages isolés » parfaitement réalisée est alors
+    restituée « obtenu 4 nœuds, visé 2 » — trompeur. On recompose donc le verdict
+    côté IHM en deux questions distinctes :
+
+    - **nœuds** : a-t-on les **mêmes ouvrages actifs par nœud** que la cible ?
+      → ``noeuds_ok`` (égalité des partitions des départs *raccordés*) ;
+    - **isolés** : a-t-on **exactement** les ouvrages déconnectés attendus ?
+      → ``isoles_ok`` (égalité ensembliste).
+
+    ``is_verified`` = les deux. Le diagnostic liste les écarts d'isolés
+    (``isoles_manquants`` : attendus isolés mais raccordés ;
+    ``isoles_inattendus`` : déconnectés sans l'avoir prévu).
+
+    Les ouvrages isolés sont **retirés** des partitions de nœuds passées (un
+    isolé présenté comme singleton n'est pas un nœud) : le caller peut donc
+    passer la partition brute de l'état réalisé.
+
+    Fonction **pure** (ni Flask ni pypowsybl ; testable isolément)."""
+    iso_obt = set(isoles_obtenus or [])
+    iso_att = set(isoles_attendus or [])
+
+    def _part(groups, iso):
+        # Partition des seuls départs *raccordés* (isolés exclus, vides écartés).
+        out = set()
+        for g in groups or []:
+            reels = frozenset(e for e in g if e not in iso)
+            if reels:
+                out.add(reels)
+        return out
+
+    p_obt, p_att = _part(noeuds_obtenus, iso_obt), _part(noeuds_attendus, iso_att)
+    noeuds_ok = p_obt == p_att
+    isoles_ok = iso_obt == iso_att
+    return {
+        "noeuds_obtenus": sorted((sorted(g) for g in p_obt), key=lambda g: g[0]),
+        "noeuds_attendus": sorted((sorted(g) for g in p_att), key=lambda g: g[0]),
+        "isoles_obtenus": sorted(iso_obt),
+        "isoles_attendus": sorted(iso_att),
+        "nb_noeuds_reels": len(p_obt),
+        "nb_isoles": len(iso_obt),
+        "nb_noeuds_vises": len(p_att),
+        "nb_isoles_vises": len(iso_att),
+        "noeuds_ok": noeuds_ok,
+        "isoles_ok": isoles_ok,
+        "is_verified": noeuds_ok and isoles_ok,
+        "isoles_manquants": sorted(iso_att - iso_obt),   # attendus isolés, raccordés
+        "isoles_inattendus": sorted(iso_obt - iso_att),  # isolés non prévus
+    }
+
+
+def _fmt_noeuds_isoles(nb_noeuds: int, nb_isoles: int) -> str:
+    """« 2 nœud(s) + 2 ouvrage(s) isolé(s) » (partie isolés omise si nulle)."""
+    txt = f"{nb_noeuds} nœud(s)"
+    if nb_isoles:
+        txt += f" + {nb_isoles} ouvrage(s) isolé(s)"
+    return txt
+
+
 class Session:
     """État serveur (mono-utilisateur)."""
 
@@ -814,8 +880,9 @@ class Session:
         poste = PosteTopologique.from_graph(self._graph(self.initial), self.vl)
 
         iso = set(isolated or [])
-        univers = [eq for grp in self.groups_of(self.initial)
-                   for eq in grp if eq not in iso]
+        depart_groups = self.groups_of(self.initial)
+        all_feeders = {eq for grp in depart_groups for eq in grp}
+        univers = [eq for grp in depart_groups for eq in grp if eq not in iso]
         groups = _normalize_groups(
             univers, [[e for e in g if e not in iso] for g in (groups or [])])
         topo_cible = TopologieNodale.from_node_groups(self.vl, groups)
@@ -834,14 +901,59 @@ class Session:
 
         svg, switches, nb = self.view(self.current)
         seq = ident.sequence   # sous-produit éventuel (écarts détaillés)
+
+        # --- Restitution **iso-aware** : décompose « N nœuds » obtenus en vrais
+        # nœuds électriques + ouvrages isolés, et recompose un verdict honnête.
+        # (La façade libTOPO compte chaque isolé comme une composante → « obtenu
+        # 4 nœuds » là où l'opérateur lit « 2 nœuds + 2 ouvrages isolés ».)
+        realise = self.nodale_state(self.current)
+        iso_att = iso & all_feeders        # ouvrages réels déclarés isolés
+        # _decompose_realisation retire lui-même les isolés des partitions.
+        dec = _decompose_realisation(
+            realise["groups"], realise["isolated"], groups, iso_att)
+        dec_obt = _fmt_noeuds_isoles(dec["nb_noeuds_reels"], dec["nb_isoles"])
+        dec_vis = _fmt_noeuds_isoles(dec["nb_noeuds_vises"], dec["nb_isoles_vises"])
+        if dec["is_verified"]:
+            message = f"Topologie d'intérêt atteinte : {dec_obt}."
+        else:
+            message = f"Obtenu {dec_obt}, visé {dec_vis}."
+            if not dec["noeuds_ok"]:
+                message += (" Les ouvrages actifs par nœud ne correspondent pas "
+                            "à la cible.")
+            diag = []
+            if dec["isoles_manquants"]:
+                diag.append("attendus déconnectés mais raccordés : "
+                            + ", ".join(self._short_name(e)
+                                        for e in dec["isoles_manquants"]))
+            if dec["isoles_inattendus"]:
+                diag.append("déconnectés sans l'avoir prévu : "
+                            + ", ".join(self._short_name(e)
+                                        for e in dec["isoles_inattendus"]))
+            if diag:
+                message += " Ouvrages isolés — " + " ; ".join(diag) + "."
+
         return {
             "svg": svg, "switches": switches, "nb_noeuds": nb,
-            "is_verified": ident.is_realisable,
-            "message": ident.message,
+            "is_verified": dec["is_verified"],
+            "message": message,
             "ecarts": seq.ecarts if seq is not None else [],
             "noeuds_non_realisables": ident.noeuds_non_realisables,
             "nb_obtenu": nb,
             "nb_vise": topo_cible.nb_noeuds,
+            # Décomposition iso-aware (vrais nœuds vs ouvrages isolés).
+            "nb_noeuds_reels": dec["nb_noeuds_reels"],
+            "nb_isoles": dec["nb_isoles"],
+            "nb_noeuds_vises": dec["nb_noeuds_vises"],
+            "nb_isoles_vises": dec["nb_isoles_vises"],
+            "noeuds_ok": dec["noeuds_ok"],
+            "isoles_ok": dec["isoles_ok"],
+            "isoles_obtenus": dec["isoles_obtenus"],
+            "isoles_attendus": dec["isoles_attendus"],
+            "isoles_manquants": dec["isoles_manquants"],
+            "isoles_inattendus": dec["isoles_inattendus"],
+            # Message brut de l'algorithme (diagnostic interne, non restitué tel
+            # quel : il conflate isolés et nœuds — cf. _decompose_realisation).
+            "algo_message": ident.message,
             "algo": self.algos["identificateur"],
             # Vue nodale **réalisée** (partition + couleurs + isolés) pour
             # resynchroniser le volet nodal cible avec le détail obtenu.

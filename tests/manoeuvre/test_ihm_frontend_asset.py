@@ -96,6 +96,9 @@ REQUIRED_MARKERS = [
     # Volet nodal : sections repliables + Réinitialiser + isolés (conteneurs)
     'onclick="toggleNsec(this)"', 'function toggleNsec', "↺ Réinitialiser",
     "＋ Nœud", 'id="ndDepartIso"', 'id="ndCibleIso"',
+    # Restitution iso-aware : décomposition vrais nœuds vs ouvrages isolés
+    'function nodComputeMsg', 'function decFmt', 'd.nb_noeuds_reels',
+    "ouvrage(s) isolé(s)",
     # Dates d'accès rapide 2021-2023
     "'2022-06-15'", "'2023-02-08'",
 ]
