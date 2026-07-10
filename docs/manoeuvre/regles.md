@@ -526,6 +526,75 @@ mécanismes, branchés **transactionnellement** (retenus seulement s'ils vérifi
 
 ---
 
+## Conformité « art de la manœuvre » (R20-R25)
+
+> Analyse critique, spécification complète et règles non encore implémentées
+> (R26 validations électriques, R27 multi-postes, R28 automates) :
+> **`docs/manoeuvre/art_de_la_manoeuvre.md`**. Les verdicts de ces règles sont
+> portés par le champ **séparé** `ResultatManoeuvres.conformite`
+> (`ConformiteSequence` : `violations` / `avertissements` / annotations),
+> renseigné par `plugins.pipeline.verifier_sequence` — les champs historiques
+> `ecarts`/`alertes` sont inchangés (goldens iso).
+
+### R20 — Classification des conséquences de chaque manœuvre
+Chaque manœuvre est classée par rejeu en conséquences élémentaires CCRT
+(manœuvre hors tension, ouverture/fermeture de boucle, préparer/désaiguiller,
+mise sous/hors tension, établissement/coupure de transit, changement du nombre
+de nœuds, sans effet), avec la famille CCRT de l'organe (DJ, interrupteur, SA
+d'aiguillage, SA de couplage, sectionnement SS, sectionneur de ligne).
+Présomption de tension sur les feeders (mono-poste, conservatif).
+- **Code** : `algo/conformite.py` — `classifier_manoeuvres`, `Consequence`,
+  `FamilleOrgane`, `familles_organes`.
+- **Test** : `test_conformite_art_manoeuvre.py::test_boucle_courte_classee_boucle`,
+  `::test_boucle_longue_conforme`, `::test_ouverture_couplage_change_nb_noeuds`,
+  `::test_manoeuvre_hors_tension`, `::test_familles_organes_carrip3`.
+
+### R21 — Matrice d'autorisation conséquence × organe (CCRT)
+Un sectionneur ne peut ni établir/couper un transit ni changer le nombre de
+nœuds (réservé DJ/interrupteur) → **violation**. Généralise R18 : couvre aussi
+le pontage de deux nœuds par fermeture de SA.
+- **Code** : `conformite.verifier_matrice_autorisation`.
+- **Test** : `::test_sa_en_charge_est_une_violation`,
+  `::test_fermeture_sa_pontant_deux_noeuds_est_une_violation`,
+  `::test_sequence_algo_est_conforme` (les séquences natives sont conformes).
+
+### R22 — Essai de jeu de barre (détection)
+La remise sous tension d'une section morte par un **sectionneur** lève un
+**avertissement** (préférer un essai par disjoncteur : ligne > couplage >
+transformateur). La *génération* de la sous-séquence d'essai par le séquenceur
+reste à faire (cf. art_de_la_manoeuvre.md § 4.2).
+- **Code** : `conformite.verifier_matrice_autorisation` (branche essai de barre).
+- **Test** : `::test_essai_de_barre_avertissement`.
+
+### R23 — Suivi d'état des départs (machine à états CCO)
+États (nb SA fermés × OC ligne) : désaiguillé, préparé, préparé-DA, en service,
+en service-DA, bizarre non préparé fermé. Transitions **interdites** (ouvrir le
+dernier SA en service ; fermer un SA sous OC fermé non préparé) → violation ;
+transitions « bizarres » → avertissement ; contrôles associés (±I/Scc,
+contrôle nœuds sur ±DA).
+- **Code** : `conformite.suivre_etats_departs`, `EtatDepart`, `_TRANSITIONS_DEPART`.
+- **Test** : `::test_trajectoire_etats_boucle_longue`,
+  `::test_double_aiguillage_controle_noeuds`, `::test_sa_en_charge_est_une_violation`.
+
+### R24 — Temporisations (ACT 104, sous-ensemble graphe)
+10 s après toute manœuvre de sectionneur ; 60 s minimum entre deux fermetures
+d'un même DJ (regonflage, temps déjà écoulé décompté). Temporisations
+contextuelles (régleurs TR, PSEM, MHU→SUAV 225/400 kV) spécifiées non calculées.
+- **Code** : `conformite.calculer_temporisations`, `Temporisation`.
+- **Test** : `::test_tempo_sectionneur_10s`, `::test_tempo_regonflage_dj_60s`,
+  `::test_pas_de_tempo_dj_ferme_une_seule_fois`.
+
+### R25 — Contrôles SCADA attendus par manœuvre
+Par conséquence : TM I passe à 0 (coupure), TS absence tension apparaît /
+disparaît (mise hors/sous tension, sections nommées), TM I/P/Q conformes au
+calcul + Icc/TS PRESENCE (établissement), contrôle du nombre de nœuds
+(changement de nœuds, ±DA). Boucles et manœuvres HU : aucun contrôle.
+- **Code** : `conformite._controles_pour` (→ `ManoeuvreClassee.controles`),
+  contrôles de transition dans `_TRANSITIONS_DEPART`.
+- **Test** : `::test_controles_attendus`, `::test_trajectoire_etats_boucle_longue`.
+
+---
+
 ## Postes multi-sections
 
 Les postes à plusieurs **sections par barre** (ex. **CARRIP6** : 2 barres × 3

@@ -24,6 +24,7 @@ import networkx as nx
 from ..topologie import PosteTopologique, TopologieNodale
 from ..algo.results import ResultatManoeuvres
 from ..algo.graph_ops import _set_switch, _switch_edge_index, _wired_busbar
+from ..algo.conformite import analyser_conformite
 from ..algo.verification import (
     _verifier_regles,
     ouvrages_simultanement_hors_tension,
@@ -80,7 +81,11 @@ def verifier_sequence(
       (si fournie), règles de sûreté du sectionneur ;
     - ``is_verified_detaillee`` (si ``cible`` est fournie) ;
     - ``alertes`` « un seul ouvrage hors tension à la fois » (sauf
-      ``mode="aggressive"``, qui dé-énergise en lot par construction).
+      ``mode="aggressive"``, qui dé-énergise en lot par construction) ;
+    - ``conformite`` : analyse « art de la manœuvre » (classification des
+      conséquences, matrice d'autorisation CCRT, états des départs,
+      temporisations ACT 104, contrôles SCADA attendus — R20-R25). Champ
+      **séparé** d'``ecarts``/``alertes`` (verdicts historiques inchangés).
 
     Mute ``res`` (et le retourne). Ne mute jamais ``poste``.
     """
@@ -113,6 +118,8 @@ def verifier_sequence(
 
     if mode != "aggressive":
         res.alertes = ouvrages_simultanement_hors_tension(poste, res.manoeuvres)
+
+    res.conformite = analyser_conformite(poste, res.manoeuvres)
 
     if not res.message:
         res.message = ("Topologie cible atteinte et vérifiée." if res.is_verified

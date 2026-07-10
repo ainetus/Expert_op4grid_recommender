@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Maneuver module — "art de la manœuvre" conformity verifier (rules
+  R20–R25)** (`manoeuvre/algo/conformite.py`). Built from the RTE operating
+  references (CCRT C3-3 authorization matrix, ACT 104 timing directive, the
+  CCO expert-method note): per-manoeuvre **consequence classification** by
+  replay (dead-zone operation, loop open/close, prepare/de-select, energize /
+  de-energize, make/break transit, node-count change) with CCRT organ families
+  (breaker, load-break switch, busbar selector, coupling disconnector, busbar
+  sectionalizer, line disconnector); the **authorization matrix** (a
+  disconnector may not make/break transit nor change the substation node
+  count — generalizes the load-break rule R18); a **busbar-test advisory**
+  (re-energizing a dead busbar section through a disconnector instead of a
+  breaker, R22); the **CCO bay state machine** (désaiguillé / préparé / ±DA /
+  en service, forbidden and "bizarre" transitions, R23); **ACT 104 timings**
+  (10 s after each disconnector operation, ≥60 s between two closures of the
+  same breaker, R24) and **expected SCADA checks** per manoeuvre (TS/TM,
+  node-count checks, R25). Results land in a new, separate
+  `ResultatManoeuvres.conformite` field (`ConformiteSequence`: violations /
+  avertissements / temporisations / contrôles), populated by
+  `plugins.pipeline.verifier_sequence` — historical `ecarts`/`alertes`
+  verdicts (and all goldens) are byte-identical.
+- **Critical coverage analysis + consolidated rule set**
+  (`docs/manoeuvre/art_de_la_manoeuvre.md`): what R1–R19 do and do not cover
+  versus the operating references, the enriched rules R20–R25 (implemented)
+  and R26–R28 (specified: load-flow/Icc validation via the recommender's
+  pypowsybl backend, multi-substation orchestration "phase D" with
+  transformer voltage-order rules, automata alerts), the CCO `listeDordre`
+  code mapping, and the module/algo/verifier restructuring plan.
+  `docs/manoeuvre/regles.md` gains the R20–R25 traceability entries.
+
 ## [0.3.0.post1] - 2026-07-08
 
 A `.post1` release on top of `0.3.0` (no breaking changes; performance

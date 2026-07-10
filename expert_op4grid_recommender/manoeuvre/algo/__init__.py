@@ -12,6 +12,9 @@ couches (dépendances strictement descendantes, sans cycle) :
                     chemins structurels, couplers inter-SJB)
     placement     — placement nœud → sections de barres (phases 2.2-2.4)
     verification  — vérificateurs de la règle du sectionneur (rejeu unique)
+    conformite    — conformité « art de la manœuvre » (R20-R25) : conséquences,
+                    matrice d'autorisation CCRT, états des départs,
+                    temporisations ACT 104, contrôles SCADA attendus
     sequencing    — séquenceur général (couplage + sectionnement) + ré-aiguillage
     targets       — points d'entrée (cible nodale / cible détaillée)
 
@@ -133,6 +136,21 @@ from .verification import (
     _optimiser_sequence as _optimiser_sequence,
     _sectionneurs_sous_charge_par_manoeuvre as _sectionneurs_sous_charge_par_manoeuvre,
 )
+from .conformite import (
+    FamilleOrgane as FamilleOrgane,
+    Consequence as Consequence,
+    EtatDepart as EtatDepart,
+    ManoeuvreClassee as ManoeuvreClassee,
+    TransitionDepart as TransitionDepart,
+    Temporisation as Temporisation,
+    ConformiteSequence as ConformiteSequence,
+    familles_organes as familles_organes,
+    classifier_manoeuvres as classifier_manoeuvres,
+    verifier_matrice_autorisation as verifier_matrice_autorisation,
+    suivre_etats_departs as suivre_etats_departs,
+    calculer_temporisations as calculer_temporisations,
+    analyser_conformite as analyser_conformite,
+)
 from .sequencing import (
     _reaiguiller_vers_sjb as _reaiguiller_vers_sjb,
     _isoler_depart_hors_barre as _isoler_depart_hors_barre,
@@ -156,4 +174,18 @@ __all__ = [
     "determiner_manoeuvres_cible_detaillee",
     "sectionneurs_sous_charge_par_manoeuvre",
     "ouvrages_simultanement_hors_tension",
+    # Conformité « art de la manœuvre » (R20-R25)
+    "FamilleOrgane",
+    "Consequence",
+    "EtatDepart",
+    "ManoeuvreClassee",
+    "TransitionDepart",
+    "Temporisation",
+    "ConformiteSequence",
+    "familles_organes",
+    "classifier_manoeuvres",
+    "verifier_matrice_autorisation",
+    "suivre_etats_departs",
+    "calculer_temporisations",
+    "analyser_conformite",
 ]

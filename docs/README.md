@@ -54,8 +54,14 @@ historical dataset it is validated against. (Its pluggable calculation phases ar
 documented under [`architecture/plugins.md`](architecture/plugins.md).)
 - [`manoeuvre/module.md`](manoeuvre/module.md) — module reference: objectives,
   pipeline, node-breaker topology analysis.
-- [`manoeuvre/regles.md`](manoeuvre/regles.md) — business rules (R1–R16) with
+- [`manoeuvre/regles.md`](manoeuvre/regles.md) — business rules (R1–R25) with
   rule-to-code traceability.
+- [`manoeuvre/art_de_la_manoeuvre.md`](manoeuvre/art_de_la_manoeuvre.md) —
+  critical coverage analysis against the RTE operating references (CCRT C3-3,
+  ACT 104, CCO expert method), the consolidated/enriched rule set R20–R28
+  (consequence classification, authorization matrix, busbar test, bay state
+  machine, timing, expected SCADA checks, electrical validation, multi-substation
+  orchestration, automata) and the module/algo/verifier restructuring plan.
 - [`manoeuvre/ihm.md`](manoeuvre/ihm.md) — the interactive web IHM (topology
   editor + sequence animation, day-exploration map, ⚙ config modal, isolated-device
   declaration, scenario author/date metadata) and the hosted HuggingFace Space.

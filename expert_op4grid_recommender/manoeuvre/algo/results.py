@@ -4,9 +4,12 @@ manoeuvre/algo/results.py — Structures de sortie de l'algorithme (manœuvre un
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from ..topologie import TopologieNodale
+
+if TYPE_CHECKING:  # import différé (conformite dépend de results)
+    from .conformite import ConformiteSequence
 
 
 @dataclass
@@ -44,6 +47,12 @@ class ResultatManoeuvres:
     # Dégradation gracieuse : départs des nœuds cibles **non réalisables** sur ce
     # poste (cible partiellement atteinte, à compléter manuellement par l'opérateur).
     noeuds_non_realisables: list[list[str]] = field(default_factory=list)
+    # Analyse de conformité « art de la manœuvre » (classification des
+    # conséquences, matrice d'autorisation CCRT, états des départs,
+    # temporisations ACT 104, contrôles attendus). Renseignée par
+    # ``plugins.pipeline.verifier_sequence`` ; indépendante d'``ecarts`` /
+    # ``alertes`` (compatibilité des goldens).
+    conformite: Optional["ConformiteSequence"] = None
 
     @property
     def nb_manoeuvres(self) -> int:
