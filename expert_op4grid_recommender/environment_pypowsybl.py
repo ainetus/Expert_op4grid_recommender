@@ -325,7 +325,15 @@ def switch_to_dc_load_flow_pypowsybl(env: SimulationEnvironment,
     # Create new environment with DC mode
     # Note: In the pypowsybl backend, we can set DC mode on the network manager
     env.network_manager._default_dc = True
-    
+
+    # Mark this (possibly reused) env as transiently escalated to DC so a later
+    # analysis restores it (issue #6). This flag is checked at the top of
+    # run_analysis_step1's reused-env branch, which calls
+    # env.reset_loadflow_mode_to_baseline() to undo the escalation. Without it,
+    # DC mode + the DC-solved (de-energised) base variant leak across analyses
+    # and silently hide every subsequent overload.
+    env._dc_escalation_pending = True
+
     # Reset and get new observation
     obs = env.reset()
     

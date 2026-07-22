@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1.post1] - 2026-07-22
+
+### Fixed
+
+- **Reused pypowsybl env no longer "contaminated" by a DC escalation (issue #6).**
+  When an overload-disconnection load flow diverges, `run_analysis_step2_graph`
+  calls `switch_to_dc_load_flow_pypowsybl`, which escalated the *shared* env to
+  DC by setting `NetworkManager._default_dc = True` and DC-solving the base
+  variant (leaving every bus `v_mag = NaN`, since a DC load flow computes no
+  voltage magnitudes). That escalation was never reset, so a subsequent analysis
+  reusing the same `SimulationEnvironment` (batch classifiers, long-lived
+  services, the Co-Study4Grid game backend) ran *every* load flow in DC — where
+  branch currents are not populated, so `rho ≈ 0` and real overloads **silently
+  vanished** (`run_analysis_step1` returned an empty "Overload breaks the grid
+  apart" short-circuit). The escalation is now recorded
+  (`SimulationEnvironment._dc_escalation_pending`) and undone at the next
+  analysis boundary: `run_analysis_step1`'s reused-env branch calls
+  `SimulationEnvironment.reset_loadflow_mode_to_baseline(config.USE_DC_LOAD_FLOW)`,
+  restoring the configured baseline load-flow mode and an AC-solved (energized)
+  base variant — exactly like a freshly built env. Behaviour-preserving on the
+  non-divergent path (the restore only fires after an actual DC escalation) and
+  it removes the need for the game-mode classifier's env-rebuild workaround. The
+  earlier "deep, unrecoverable pypowsybl network-global corruption" diagnosis in
+  `docs/reviews/2026-07_env_corruption_overflow_graph.md` was an artifact of the
+  leaked `_default_dc` flag (which silently turned every "recovery" AC solve back
+  into DC); the write-up is corrected there. Regression test:
+  `tests/test_env_reuse_dc_escalation.py` (IEEE-9 based — no France-grid fixture).
+
 ## [0.3.1] - 2026-07-21
 
 ### Changed

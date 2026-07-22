@@ -75,9 +75,24 @@ class SimulationEnvironment:
             thermal_limits_path, thermal_limits
         )
         
+        # DC load-flow mode (mirrors network_manager._default_dc for external,
+        # DC-aware callers). Always defined so the attribute exists before any
+        # DC escalation sets it. get_env_first_obs_pypowsybl flips it to True
+        # when the env is created in DC mode.
+        self._use_dc = False
+
+        # Transient-DC-escalation guard (issue #6). When an
+        # overload-disconnection load flow diverges, the analysis pipeline calls
+        # switch_to_dc_load_flow_pypowsybl, which escalates THIS env to DC for a
+        # single analysis. This flag records that escalation so a subsequent
+        # analysis that reuses the env can detect and undo it (see
+        # reset_loadflow_mode_to_baseline) instead of silently inheriting DC mode
+        # + a de-energised base variant.
+        self._dc_escalation_pending = False
+
         # Run initial load flow to ensure valid state
         self._ensure_valid_state()
-        
+
         # Create initial observation
         self._current_obs = None
     
@@ -149,7 +164,37 @@ class SimulationEnvironment:
         self.network_manager.reset_to_base()
         self._ensure_valid_state()
         return self.get_obs()
-    
+
+    def reset_loadflow_mode_to_baseline(self, dc: bool = False) -> None:
+        """Restore this env's load-flow mode to ``dc`` and re-energise the base
+        variant — the inverse of a transient ``switch_to_dc`` escalation.
+
+        ``switch_to_dc_load_flow_pypowsybl`` escalates a (possibly reused) env to
+        DC for a single analysis: it sets ``NetworkManager._default_dc = True``
+        and DC-solves the base variant, which leaves every bus ``v_mag = NaN``
+        because a DC load flow computes no voltage magnitudes. Since one env is
+        shared across analyses, that escalation would otherwise persist and force
+        every later analysis into DC — where branch currents are not populated,
+        so ``rho ≈ 0`` and real overloads silently vanish (issue #6).
+
+        Call this before reusing the env for a new analysis to put it back into
+        the configured baseline mode with an AC-solved (energised) base variant,
+        exactly as a freshly built env would be. Idempotent; its cost is a single
+        baseline load flow (far cheaper than the ~4 s full env rebuild the bug
+        otherwise forces). It clears :attr:`_dc_escalation_pending`.
+
+        Args:
+            dc: The baseline DC-mode to restore (normally ``config.USE_DC_LOAD_FLOW``).
+        """
+        self._use_dc = dc
+        self.network_manager._default_dc = dc
+        self.network_manager.reset_to_base()
+        # Re-solve the base variant in the restored mode so downstream
+        # observations read an energised grid (AC) instead of the de-energised
+        # DC snapshot the escalation left behind.
+        self._ensure_valid_state()
+        self._dc_escalation_pending = False
+
     def set_thermal_limit(self, thermal_limits: Union[List[float], np.ndarray]):
         """
         Set thermal limits for all lines.

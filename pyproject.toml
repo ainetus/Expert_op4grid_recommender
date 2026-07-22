@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "expert_op4grid_recommender"
-version = "0.3.1"
+version = "0.3.1.post1"
 authors = [
     { name="RTE", email="rte@rte-france.com" },
 ]

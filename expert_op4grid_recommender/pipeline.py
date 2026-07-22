@@ -259,7 +259,21 @@ def run_analysis_step1(analysis_date: Optional[datetime],
     with Timer("Environment Setup"):
         if prebuilt_env_context is not None and is_pypowsybl:
             env = prebuilt_env_context['env']
-            env.network_manager.reset_to_base()
+            # Sanitize a reused env before starting a new analysis. A prior
+            # analysis whose overload-disconnection load flow diverged calls
+            # switch_to_dc_load_flow_pypowsybl, which escalates this *shared* env
+            # to DC (NetworkManager._default_dc=True) and DC-solves the base
+            # variant (leaving every bus v_mag=NaN — DC computes no voltage
+            # magnitudes). Left in place, that escalation leaks across analyses:
+            # this analysis would run every load flow in DC, where branch
+            # currents are not populated, so rho≈0 and real overloads silently
+            # vanish (issue #6). When the env was escalated, restore the
+            # configured baseline LF mode + a valid (energised) base state;
+            # otherwise just reset the working variant, exactly as before.
+            if getattr(env, "_dc_escalation_pending", False):
+                env.reset_loadflow_mode_to_baseline(config.USE_DC_LOAD_FLOW)
+            else:
+                env.network_manager.reset_to_base()
             obs = env.get_obs()
             path_chronic = prebuilt_env_context['path_chronic']
             chronic_name = prebuilt_env_context['chronic_name']

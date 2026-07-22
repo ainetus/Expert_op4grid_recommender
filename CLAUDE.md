@@ -503,8 +503,25 @@ pytest tests/test_ActionClassifier.py::test_specific  # Single test
 
 ## Current Development Status
 
-**Current version**: `0.3.1` (see `CHANGELOG.md` for full history)
+**Current version**: `0.3.1.post1` (see `CHANGELOG.md` for full history)
 
+> **v0.3.1.post1 highlights** (silent-correctness fix, issue #6): a reused
+> pypowsybl `SimulationEnvironment` is no longer contaminated by a transient DC
+> escalation. When an overload-disconnection load flow diverges,
+> `switch_to_dc_load_flow_pypowsybl` set `NetworkManager._default_dc=True` on the
+> **shared** env and DC-solved the base variant (every bus `v_mag=NaN`), and the
+> flag was never reset — so the *next* analysis reusing the env ran every load
+> flow in DC, where branch currents aren't populated (`rho≈0`) and real overloads
+> silently vanished. The escalation is now recorded
+> (`SimulationEnvironment._dc_escalation_pending`) and undone at the next analysis
+> boundary via `SimulationEnvironment.reset_loadflow_mode_to_baseline(...)`, which
+> `run_analysis_step1`'s reused-env branch calls to restore the configured
+> baseline LF mode + an AC-solved (energized) base. Byte-identical on the
+> non-divergent path; removes the game-mode classifier's env-rebuild workaround.
+> The "deep pypowsybl corruption" diagnosis in
+> `docs/reviews/2026-07_env_corruption_overflow_graph.md` was an artifact of the
+> leaked flag and is corrected there. See `docs/release-notes/v0.3.1.post1.md`.
+>
 > **v0.3.1 highlights**: opt-in `USE_DC_FOR_OVERFLOW_GRAPH` (default off — AC
 > graph observations preserved) runs the overflow-graph flow transfer in DC
 > with a power-derived rho (`|I| = |P|·1000/(√3·Vnom)`), ~10 s → ~0.2 s on a
