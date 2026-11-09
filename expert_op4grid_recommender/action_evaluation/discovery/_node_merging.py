@@ -181,7 +181,14 @@ class NodeMergingMixin:
                             f"  {'Effective' if is_rho_reduction else 'Ineffective'} node merge: {action_id}"
                         )
 
-        self.identified_merges = identified
+        # Descending score (positive delta phase = desired flow direction), like
+        # the other families: the prioritization phases take the first N entries
+        # in insertion order (dispatch-path substation order otherwise).
+        self.identified_merges = dict(
+            sorted(
+                identified.items(), key=lambda x: scores_map.get(x[0], 0), reverse=True
+            )
+        )
         self.effective_merges = effective
         self.ineffective_merges = ineffective
         self.scores_merges = scores_map

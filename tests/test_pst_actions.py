@@ -283,6 +283,61 @@ def test_action_classifier_combined_pst():
     action.lines_or_bus = {"LINE1": 1}
     assert classifier.identify_grid2op_action_type(grid2op_action=action) == "pst_tap"
 
+def test_pst_identified_sorted_by_score_not_network_order(mock_obs, mock_nm):
+    """Regression: the MIN_PST floor must take the best-scored PST.
+
+    add_prioritized_actions walks ``identified`` in insertion order, so a
+    low-score PST listed first in the network (IIDM) order used to win the
+    single MIN_PST=1 slot over a far better one (real case: MUR Y661 at
+    0.04 ahead of NIORTY665 at 0.94).
+    """
+    from expert_op4grid_recommender.utils.helpers import add_prioritized_actions
+
+    mock_nm._line_or_sub = {"MUR Y661": "SUB1", "NIORTY665": "SUB1"}
+    mock_nm._line_ex_sub = {"MUR Y661": "SUB2", "NIORTY665": "SUB2"}
+    mock_nm.get_pst_ids.return_value = ["MUR Y661", "NIORTY665"]
+    mock_nm.get_pst_tap_info.return_value = {
+        "tap": 17, "low_tap": 1, "high_tap": 33, "step_count": 33
+    }
+
+    action_space = ActionSpace(mock_nm)
+    mock_env = MagicMock()
+    mock_env.action_space = action_space
+    discoverer = ActionDiscoverer(
+        env=mock_env,
+        obs=mock_obs,
+        obs_defaut=MagicMock(),
+        timestep=0,
+        lines_defaut=[],
+        lines_overloaded_ids=[],
+        act_reco_maintenance=MagicMock(),
+        classifier=MagicMock(),
+        non_connected_reconnectable_lines=[],
+        all_disconnected_lines=[],
+        dict_action={},
+        actions_unfiltered=set(),
+        hubs=[],
+        g_overflow=MagicMock(),
+        g_distribution_graph=MagicMock(),
+        simulator_data={},
+        check_action_simulation=False
+    )
+    discoverer._cached_disconnection_bounds = DisconnectionBounds(
+        max_overload_flow=391.5, min_redispatch=10.0, max_redispatch=50.0,
+        capacity_map={"MUR Y661": 15.7, "NIORTY665": 368.0},
+    )
+
+    discoverer.find_relevant_pst_actions(["SUB1"], [])
+
+    assert list(discoverer.identified_pst_actions) == [
+        "pst_tap_NIORTY665_inc2",
+        "pst_tap_MUR Y661_inc2",
+    ]
+    selected = add_prioritized_actions(
+        {}, discoverer.identified_pst_actions, 15, n_action_max_per_type=1
+    )
+    assert list(selected) == ["pst_tap_NIORTY665_inc2"]
+
 def test_pst_prioritization(mock_obs, mock_nm):
     action_space = ActionSpace(mock_nm)
     mock_env = MagicMock()

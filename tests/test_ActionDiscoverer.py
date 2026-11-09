@@ -338,6 +338,23 @@ def test_discoverer_find_relevant_node_merging(discoverer_instance):
     for action_id, score in discoverer_instance.scores_merges.items():
         assert isinstance(score, float)
 
+def test_node_merging_identified_sorted_by_score(discoverer_instance, monkeypatch):
+    """Regression: identified merges come out score-descending, not in
+    dispatch-path order, since the MIN_CLOSE_COUPLING floor takes the first N."""
+    # Score grows with the substation index, so the first substation met on the
+    # dispatch path gets the lowest score: insertion order != score order.
+    monkeypatch.setattr(
+        discoverer_instance, "compute_node_merging_score",
+        lambda sub_id, buses: (float(sub_id), {}),
+    )
+    discoverer_instance.find_relevant_node_merging(["Sub0", "Sub1", "Sub3"])
+
+    action_ids = list(discoverer_instance.identified_merges)
+    scores = [discoverer_instance.scores_merges[aid] for aid in action_ids]
+    assert len(action_ids) == 2
+    assert scores == sorted(scores, reverse=True)
+    assert scores[0] > scores[1]
+
 def test_discoverer_verify_relevant_reconnections(discoverer_instance, monkeypatch):
     def mock_path_check(*args): return True, ["Sub0", "Sub1", "Sub3"], None # Assume path is always clear
     monkeypatch.setattr(discoverer_instance, "_check_other_reconnectable_line_on_path", mock_path_check)
@@ -2010,13 +2027,23 @@ def test_renewable_curtailment_params_contain_power_reduction_fields(renewable_d
     assert params["reduction_MW"] == 80.0  # Wind_A's gen_p (absolute value)
 
 
-def test_renewable_curtailment_higher_power_scores_higher():
+@pytest.mark.parametrize(
+    "gens",
+    [
+        [("Wind_Big", -90.0), ("Wind_Small", -20.0)],
+        # Low-score generator first in network order: identified must still
+        # come out score-descending, since prioritization takes the first N.
+        [("Wind_Small", -20.0), ("Wind_Big", -90.0)],
+    ],
+    ids=["big_first", "small_first"],
+)
+def test_renewable_curtailment_higher_power_scores_higher(gens):
     """Within the same amont substation, higher-power generator scores higher."""
     mock_obs = MockObservation(
         name_sub=np.array(["Sub0", "Sub1", "Sub2"]),
         name_line=np.array(["L1", "L2"]),
         name_load=np.array(["Load_A"]),
-        name_gen=np.array(["Wind_Big", "Wind_Small"]),
+        name_gen=np.array([name for name, _ in gens]),
         line_or_to_subid=np.array([0, 1]),
         line_ex_to_subid=np.array([1, 2]),
         line_or_bus=np.array([1, 1]),
@@ -2025,7 +2052,7 @@ def test_renewable_curtailment_higher_power_scores_higher():
         load_to_subid=np.array([2]),
         gen_to_subid=np.array([0, 0]),
         load_values=[50.0],
-        gen_values=[-90.0, -20.0],  # Negative = producing (generator convention)
+        gen_values=[p for _, p in gens],  # Negative = producing (generator convention)
         gen_energy_sources=["WIND", "WIND"],
         sub_topologies={0: [1, 1, 1], 1: [1, 1], 2: [1, 1]},
         sub_info=np.array([3, 2, 2]),
@@ -2067,6 +2094,7 @@ def test_renewable_curtailment_higher_power_scores_higher():
     action_ids = list(discoverer.identified_renewable_curtailment.keys())
     scores = [discoverer.scores_renewable_curtailment[aid] for aid in action_ids]
     assert scores == sorted(scores, reverse=True)
+    assert action_ids[0] == "curtail_Wind_Big"
 
 
 def test_renewable_curtailment_in_action_scores():
