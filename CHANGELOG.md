@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3.post2] - 2026-11-09
+
+### Fixed
+
+- **Discovery: PST, renewable-curtailment and node-merging candidates are now
+  ranked by descending score before prioritization.**
+  `add_prioritized_actions` fills the per-family `MIN_*` floors (and the fill
+  phase) by taking the first N entries of each family's `identified` dict in
+  insertion order. `_pst.py`, `_renewable_curtailment.py` and
+  `_node_merging.py` stored their candidates in raw network order (IIDM
+  phase-tap-changer order, generator index, dispatch-path substation order),
+  so a low-score candidate listed first won the slot over a much better one.
+  Real case (French 225/400 kV grid, contingency `BXLIEL61SIRMI`): with
+  `MIN_PST=1`, `pst_tap_MUR Y661_inc2` (score 0.04) was evaluated while
+  `pst_tap_NIORTY665_inc2` (score 0.94) was dropped, only because `MUR Y661`
+  precedes `NIORTY665` in the xiidm file. The three families now sort like
+  load shedding / redispatch / disconnections / splits / reconnections, so
+  all eight families feed prioritization in descending score order. No
+  change when network order already matched score order. Regression tests
+  reverse network vs score order for each family (#125).
+
+### Changed
+
+- `_line_reconnection.py`: replaced a stale comment claiming an ascending
+  delta-theta sort (the code has always sorted descending) and removed dead
+  commented-out code. No behaviour change.
+
 ## [0.3.3.post1] - 2026-07-28
 
 ### Fixed
