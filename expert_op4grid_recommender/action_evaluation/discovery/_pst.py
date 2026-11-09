@@ -160,7 +160,15 @@ class PSTMixin:
                         f"  {'Effective' if is_rho_reduction else 'Ineffective'} PST tap: {action_id}"
                     )
 
-        self.identified_pst_actions = identified
+        # Store candidates by descending score: the orchestrator's min/fill
+        # phases take the first N entries per family (add_prioritized_actions
+        # walks insertion order), so leaving the raw network (IIDM) order here
+        # let a low-score PST win the MIN_PST slot over a far better one.
+        self.identified_pst_actions = dict(
+            sorted(
+                identified.items(), key=lambda x: scores_map.get(x[0], 0), reverse=True
+            )
+        )
         self.effective_pst_actions = effective
         self.ineffective_pst_actions = ineffective
         self.scores_pst_actions = scores_map

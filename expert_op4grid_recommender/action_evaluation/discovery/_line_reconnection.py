@@ -151,13 +151,10 @@ class LineReconnectionMixin:
                     f"  Skipping {line_reco}: Path potentially blocked by {other_line}."
                 )
 
-        # Sort by score (lower delta-theta is better for reconnections, so ascending sort)
-        actions, lines_impacted, scores = sort_actions_by_score(
-            map_action_score
-        )  # Note: sort_actions_by_score sorts DESCENDING! Need to adjust or reverse.
-        # Let's assume sort_actions_by_score is fixed to sort descending, reverse lists if needed
-        # actions_rev = dict(reversed(list(actions.items())))
-        # lines_impacted_rev = list(reversed(lines_impacted))
+        # Sort by descending |delta-theta| (larger angle gap = more flow drawn
+        # onto the reconnected line), consistent with every other family: the
+        # prioritization phases take the first N entries in insertion order.
+        actions, lines_impacted, scores = sort_actions_by_score(map_action_score)
         # scores_rev = list(reversed(scores))
 
         effective, ineffective, identified = (

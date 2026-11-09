@@ -208,7 +208,14 @@ class RenewableCurtailmentMixin(InjectionDiscoveryBase):
                     f"Warning: Simulation check failed for renewable curtailment: {e}"
                 )
 
-        self.identified_renewable_curtailment = identified
+        # Descending score, like load shedding / PST: the prioritization phases
+        # take the first N entries in insertion order (generator index order
+        # otherwise).
+        self.identified_renewable_curtailment = dict(
+            sorted(
+                identified.items(), key=lambda x: scores_map.get(x[0], 0), reverse=True
+            )
+        )
         self.effective_renewable_curtailment = effective
         self.ineffective_renewable_curtailment = ineffective
         self.scores_renewable_curtailment = scores_map
