@@ -105,22 +105,97 @@ class TestLazyActionDict:
         # 2 calls: one for initial state, one for final state (only on first access).
         assert cache.compute_bus_assignments.call_count == 2
 
-    def test_preexisting_content_not_recomputed(self):
-        """If content is already in the data dict, it should not be recomputed."""
+    def test_preexisting_content_without_switches_not_recomputed(self):
+        """Content of an action without switches is used as is."""
+        from expert_op4grid_recommender.data_loader import LazyActionDict
+
+        existing_content = {"set_bus": {"lines_or_id": {"L1": -1}}}
+        cache = MagicMock()
+
+        lazy = LazyActionDict({"content": existing_content}, topology_cache=cache)
+
+        assert lazy._content_computed  # Already marked as computed
+        assert lazy["content"] == existing_content
+        cache.compute_bus_assignments.assert_not_called()
+
+    def test_preexisting_content_kept_without_cache(self):
+        """Without a topology cache the file content cannot be re-derived: keep it."""
         from expert_op4grid_recommender.data_loader import LazyActionDict
 
         existing_content = {"set_bus": {"lines_or_id": {"L1": 2}}}
-        cache = MagicMock()
-
         lazy = LazyActionDict(
             {"content": existing_content, "switches": {"sw1": False}},
-            topology_cache=cache
+            topology_cache=None,
         )
 
-        assert lazy._content_computed  # Already marked as computed
-        result = lazy["content"]
-        assert result == existing_content
+        assert lazy._content_computed
+        assert lazy["content"] == existing_content
+
+    @staticmethod
+    def _stale_switch_action():
+        """A REPAS-like coupling action whose shipped set_bus is stale."""
+        return {
+            "switches": {"sw_coupl": True},
+            "content": {
+                "set_bus": {
+                    "lines_or_id": {"L_MOVED": 2, "L_STALE_OFF": -1},
+                    "lines_ex_id": {}, "loads_id": {}, "generators_id": {},
+                },
+                "pst_tap": {"PST1": 3},
+            },
+        }
+
+    def test_preexisting_switch_content_is_rederived(self):
+        """set_bus shipped with switches is re-derived on the loaded network.
+
+        The stale ``-1`` (a line out of service when the catalogue was built)
+        must not survive: only elements the switches actually move are kept.
+        """
+        from expert_op4grid_recommender.data_loader import LazyActionDict
+
+        _empty = {"lines_or_id": {}, "lines_ex_id": {}, "loads_id": {}, "generators_id": {}, "shunts_id": {}}
+        cache = MagicMock()
+        cache._switch_to_vl = {"sw_coupl": "VL1"}
+        cache.compute_bus_assignments.side_effect = [{"VL1": {}}, {"VL1": {}}]
+        cache.get_element_bus_assignments.side_effect = [
+            {**_empty, "lines_or_id": {"L_MOVED": 1, "L_STALE_OFF": 1}},
+            {**_empty, "lines_or_id": {"L_MOVED": 2, "L_STALE_OFF": 1}},
+        ]
+
+        lazy = LazyActionDict(self._stale_switch_action(), topology_cache=cache)
+        assert not lazy._content_computed
+
+        content = lazy["content"]
+
+        assert content["set_bus"]["lines_or_id"] == {"L_MOVED": 2}
+        assert content["switches"] == {"sw_coupl": True}
+        assert content["pst_tap"] == {"PST1": 3}  # other content keys survive
+
+    def test_preexisting_switch_content_kept_when_switches_unknown(self):
+        """Switches absent from the network: fall back to the file content."""
+        from expert_op4grid_recommender.data_loader import LazyActionDict
+
+        cache = MagicMock()
+        cache._switch_to_vl = {}
+        data = self._stale_switch_action()
+
+        content = LazyActionDict(data, topology_cache=cache)["content"]
+
+        assert content == data["content"]
         cache.compute_bus_assignments.assert_not_called()
+
+    def test_preexisting_switch_content_kept_when_derivation_fails(self):
+        """A derivation error falls back to the file content, not to an empty set_bus."""
+        from expert_op4grid_recommender.data_loader import LazyActionDict
+
+        cache = MagicMock()
+        cache._switch_to_vl = {"sw_coupl": "VL1"}
+        cache.compute_bus_assignments.side_effect = RuntimeError("boom")
+        data = self._stale_switch_action()
+
+        content = LazyActionDict(data, topology_cache=cache)["content"]
+
+        assert content == data["content"]
 
     def test_disco_action_from_action_id(self):
         """disco_* actions should derive content from action ID."""
@@ -364,23 +439,37 @@ class TestEnrichActionsLazy:
             assert result["a1"]._topology_cache is result["a2"]._topology_cache
             assert result["a1"]._topology_cache is cache_instance
 
-    def test_preserves_existing_content(self):
-        """Actions that already have content should retain it."""
+    def test_preserves_existing_content_without_switches(self):
+        """Actions without switches that already have content should retain it."""
         from expert_op4grid_recommender.data_loader import enrich_actions_lazy
 
         mock_network = MagicMock()
         with patch('expert_op4grid_recommender.utils.conversion_actions_repas.NetworkTopologyCache') as MockCache:
             MockCache.return_value = MagicMock()
 
-            existing_content = {"set_bus": {"lines_or_id": {"L1": 1}}}
-            dict_actions = {
-                "a1": {"content": existing_content, "switches": {"sw1": False}},
-            }
+            existing_content = {"set_bus": {"lines_or_id": {"L1": -1}}}
+            dict_actions = {"a1": {"content": existing_content}}
 
             result = enrich_actions_lazy(dict_actions, mock_network)
 
             assert result["a1"]._content_computed
             assert result["a1"]["content"] == existing_content
+
+    def test_switch_actions_with_content_are_rederived(self):
+        """Switch actions shipping a content are re-derived on the loaded network."""
+        from expert_op4grid_recommender.data_loader import enrich_actions_lazy
+
+        mock_network = MagicMock()
+        with patch('expert_op4grid_recommender.utils.conversion_actions_repas.NetworkTopologyCache') as MockCache:
+            MockCache.return_value = MagicMock()
+
+            dict_actions = {
+                "a1": {"content": {"set_bus": {"lines_or_id": {"L1": -1}}}, "switches": {"sw1": False}},
+            }
+
+            result = enrich_actions_lazy(dict_actions, mock_network)
+
+            assert not result["a1"]._content_computed
 
     def test_action_id_passed_to_lazy_dict(self):
         """Each LazyActionDict should receive its action_id."""
