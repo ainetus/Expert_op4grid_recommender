@@ -102,13 +102,24 @@ class LazyActionDict(dict):
 
     For ``disco_*`` line disconnection actions (no switches), content is built
     from the action ID / description instead.
+
+    ``switches`` is the source of truth. A ``content.set_bus`` shipped in the
+    file (e.g. by ``conversion_actions_repas``) was derived on the topology the
+    catalogue was built from, which may differ from the loaded network: a line
+    that was out of service back then appears as ``-1`` and would be wrongly
+    disconnected today. So when a topology cache is available, ``set_bus`` is
+    always re-derived from ``switches`` on the loaded network; the file's
+    ``content`` is only kept as a fallback when that derivation is impossible.
     """
 
     def __init__(self, data: dict, topology_cache=None, action_id: str = ""):
         super().__init__(data)
         self._topology_cache = topology_cache
         self._action_id = action_id
-        self._content_computed = "content" in data
+        # Pre-computed content is trusted only when it cannot be re-derived.
+        self._content_computed = "content" in data and not (
+            data.get("switches") and topology_cache is not None
+        )
 
     def _compute_content(self):
         """Compute content.set_bus from switches using NetworkTopologyCache."""
@@ -117,6 +128,7 @@ class LazyActionDict(dict):
         self._content_computed = True
 
         switches = super().get("switches")
+        file_content = super().get("content")
 
         # Line actions without switches (disco_* or reco_*)
         if not switches:
@@ -137,6 +149,10 @@ class LazyActionDict(dict):
                 impacted_vl_ids.add(vl)
 
         if not impacted_vl_ids:
+            if file_content is not None:
+                # Switches unknown to this network: keep the file's content.
+                logger.debug("No voltage levels found for switches %s", list(switches.keys()))
+                return
             logger.warning("No voltage levels found for switches %s", list(switches.keys()))
             super().__setitem__("content", {"set_bus": {}})
             return
@@ -156,9 +172,13 @@ class LazyActionDict(dict):
             set_bus = _diff_set_bus(initial_set_bus, final_set_bus)
         except Exception:
             logger.exception("Failed to compute bus assignments for switches %s", list(switches.keys()))
+            if file_content is not None:
+                return
             set_bus = {}
 
-        content = {"set_bus": set_bus, "switches": switches}
+        # Keep any other key the file content carried (pst_tap, setpoints, ...).
+        content = dict(file_content) if isinstance(file_content, dict) else {}
+        content.update({"set_bus": set_bus, "switches": switches})
         super().__setitem__("content", content)
 
     def __getitem__(self, key):

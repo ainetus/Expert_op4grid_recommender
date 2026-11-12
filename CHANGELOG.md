@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Switch-based actions no longer replay a stale `set_bus` snapshot.**
+  A catalogue built by `conversion_actions_repas` ships, next to the
+  `switches` of each manoeuvre, a `content.set_bus` derived on the topology
+  the catalogue was built from (REPAS 2024-12). `ActionSpace` applied both,
+  and `BusAction` turns any `-1` into a disconnection and any bus `>= 1` into
+  a reconnection, so on another snapshot the action also opened lines that
+  were out of service back then and could reconnect a tripped contingency
+  element. Real case (point figé 2026-03-31, N-1 `BXLIEL61SIRMI`): opening
+  the `CHEV5P6` coupler also disconnected `CHEV5L61RECOU`, which the operator
+  had kept in service on section 2 (`MAUGEL61VERTO` ρ 0.78 instead of 0.40).
+  Two changes:
+  - `LazyActionDict` now always re-derives `set_bus` from `switches` on the
+    loaded network when a topology cache is available; the file's `content`
+    is only kept when that derivation is impossible (no cache, switches
+    unknown to the network, derivation error). Other content keys survive.
+  - `ActionSpace`: when every switch of an action exists in the network, the
+    switches alone set the topology and `set_bus` is kept as topology info
+    only (`lines_or_bus`, … for `ObservationWithTopologyOverride` and
+    superposition), not applied. `set_bus` is still applied for actions
+    without switches, or when a switch is unknown to the network.
+
+  Expect different results for REPAS coupling actions: 1 910 of the 2 972
+  coupler-only actions of `All_France_actions_from_REPAS.2024.12.10` carried
+  a `-1` in their shipped `set_bus`.
+
 ## [0.3.3.post2] - 2026-11-09
 
 ### Fixed

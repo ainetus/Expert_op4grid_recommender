@@ -54,6 +54,20 @@ class LineStatusAction(PypowsyblAction):
         self._modifications.append(apply_line_changes)
 
 
+def resolve_switch_id(sid: str, switch_ids) -> Optional[str]:
+    """Network switch ID for ``sid``, tolerating a ``<VL>_`` prefix; else None.
+
+    Example: PYMONP3_PYMON3COUPL -> PYMON3COUPL
+    """
+    if sid in switch_ids:
+        return sid
+    if '_' in sid:
+        parts = sid.split('_', 1)
+        if parts[1] in switch_ids:
+            return parts[1]
+    return None
+
+
 class SwitchAction(PypowsyblAction):
     """Action to change switch states (open/close) for topology changes."""
     
@@ -74,22 +88,10 @@ class SwitchAction(PypowsyblAction):
             # the top of apply is correct regardless of the active variant.
             switch_ids = set(net.get_switches().index)
 
-            # Helper to find actual switch ID if prefixed
-            def get_actual_sid(sid):
-                if sid in switch_ids:
-                    return sid
-                # Try with underscores replaced or prefix removed
-                # Example: PYMONP3_PYMON3COUPL -> PYMON3COUPL
-                if '_' in sid:
-                    parts = sid.split('_', 1)
-                    if parts[1] in switch_ids:
-                        return parts[1]
-                return None
-
             to_open = []
             to_close = []
             for sid, is_open in self.switch_states.items():
-                actual_sid = get_actual_sid(sid)
+                actual_sid = resolve_switch_id(sid, switch_ids)
                 if actual_sid:
                     if is_open: to_open.append(actual_sid)
                     else: to_close.append(actual_sid)
@@ -119,14 +121,19 @@ class BusAction(PypowsyblAction):
                  lines_ex_bus: Optional[Dict[str, int]] = None,
                  loads_bus: Optional[Dict[str, int]] = None,
                  gens_bus: Optional[Dict[str, int]] = None,
-                 substations: Optional[Dict[int, List[int]]] = None):
+                 substations: Optional[Dict[int, List[int]]] = None,
+                 apply_to_network: bool = True):
         """
         Args:
             lines_or_bus: Dict mapping line_name -> bus_number at origin
-            lines_ex_bus: Dict mapping line_name -> bus_number at extremity  
+            lines_ex_bus: Dict mapping line_name -> bus_number at extremity
             loads_bus: Dict mapping load_name -> bus_number
             gens_bus: Dict mapping gen_name -> bus_number
             substations: Dict mapping sub_id -> full topology vector
+            apply_to_network: When False, the bus assignments are only carried
+                as topology info (for ObservationWithTopologyOverride /
+                superposition) and nothing is applied to the network — used
+                when a SwitchAction already sets that topology.
         """
         super().__init__()
         self.lines_or_bus = lines_or_bus or {}
@@ -213,7 +220,8 @@ class BusAction(PypowsyblAction):
                     except Exception as e:
                         print(f"Warning: Failed to apply substation topology changes for ID {sub_id}: {e}")
 
-        self._modifications.append(apply_bus_changes)
+        if apply_to_network:
+            self._modifications.append(apply_bus_changes)
 
 
 class PowerReductionAction(PypowsyblAction):
@@ -275,7 +283,18 @@ class ActionSpace:
         self._sub_names = set(network_manager.name_sub)
         self._gen_names = set(network_manager.name_gen)
         self._load_names = set(network_manager.name_load)
-    
+        # Switch index, read on first need (variant-invariant, see SwitchAction).
+        self._switch_ids = None
+
+    def _switches_all_resolve(self, switch_states: Dict[str, bool]) -> bool:
+        """True when every switch of the action exists in the network."""
+        if self._switch_ids is None:
+            try:
+                self._switch_ids = frozenset(self._network_manager.network.get_switches().index)
+            except Exception:
+                self._switch_ids = frozenset()
+        return all(resolve_switch_id(sid, self._switch_ids) for sid in switch_states)
+
     def __call__(self, action_dict: Dict[str, Any]) -> PypowsyblAction:
         """
         Create an action from a dictionary specification.
@@ -290,7 +309,15 @@ class ActionSpace:
         
         Also handles action dicts from conversion_actions_repas:
         - {"content": {"set_bus": {...}}, "switches": {...}}
-        
+
+        When ``switches`` are given and all exist in the network, they alone
+        set the topology: ``set_bus`` is then kept as topology info only and
+        not applied. Applying it too would replay a bus snapshot that may be
+        stale (catalogue built on another topology) and would reconnect any
+        element listed with a bus >= 1 — including a tripped contingency
+        element. ``set_bus`` is applied as before when there are no switches
+        or when some switch is unknown to the network.
+
         Args:
             action_dict: Dictionary specifying the action
             
@@ -380,7 +407,10 @@ class ActionSpace:
                     lines_ex_bus=lines_ex_bus,
                     loads_bus=loads_bus,
                     gens_bus=gens_bus,
-                    substations=substations
+                    substations=substations,
+                    apply_to_network=not (
+                        switch_states and self._switches_all_resolve(switch_states)
+                    ),
                 )
                 combined_action = combined_action + bus_action
         

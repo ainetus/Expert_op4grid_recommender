@@ -274,6 +274,64 @@ class TestActionSpaceSwitchesField:
         assert len(action._modifications) >= 1
 
 
+class TestSwitchesDriveTopology:
+    """When the switches of an action exist, they alone set the topology.
+
+    The set_bus shipped alongside (possibly stale) is kept as topology info
+    but must not be applied: it would disconnect lines listed ``-1`` and
+    reconnect any element listed with a bus >= 1.
+    """
+
+    @pytest.fixture
+    def setup(self):
+        from expert_op4grid_recommender.pypowsybl_backend import NetworkManager, ActionSpace
+
+        network = pypowsybl.network.create_four_substations_node_breaker_network()
+        nm = NetworkManager(network=network)
+        return nm, ActionSpace(nm)
+
+    @staticmethod
+    def _connected(nm, line_id):
+        row = nm.network.get_lines(attributes=["connected1", "connected2"]).loc[line_id]
+        return bool(row["connected1"]), bool(row["connected2"])
+
+    def test_stale_disconnection_not_applied(self, setup):
+        nm, action_space = setup
+        action = action_space({
+            "content": {"set_bus": {"lines_or_id": {"LINE_S3S4": -1}}},
+            "switches": {"S1VL2_COUPLER": True},
+        })
+
+        action.apply(nm)
+
+        assert nm.network.get_switches().loc["S1VL2_COUPLER", "open"]
+        assert self._connected(nm, "LINE_S3S4") == (True, True)
+        # Still exposed as topology info for superposition / topo_vect.
+        assert action.lines_or_bus == {"LINE_S3S4": -1}
+
+    def test_tripped_element_not_reconnected(self, setup):
+        nm, action_space = setup
+        nm.disconnect_line("LINE_S2S3")
+        action = action_space({
+            "content": {"set_bus": {"lines_or_id": {"LINE_S2S3": 2}}, "switches": {"S1VL2_COUPLER": True}},
+        })
+
+        action.apply(nm)
+
+        assert self._connected(nm, "LINE_S2S3") == (False, False)
+
+    def test_set_bus_applied_when_a_switch_is_unknown(self, setup):
+        nm, action_space = setup
+        action = action_space({
+            "content": {"set_bus": {"lines_or_id": {"LINE_S3S4": -1}}},
+            "switches": {"S1VL2_COUPLER": True, "NOT_IN_NETWORK": True},
+        })
+
+        action.apply(nm)
+
+        assert self._connected(nm, "LINE_S3S4")[0] is False
+
+
 # =============================================================================
 # Tests for switches field in conversion_actions_repas
 # =============================================================================
