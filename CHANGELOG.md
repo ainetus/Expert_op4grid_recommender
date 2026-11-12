@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3.post3] - 2026-11-12
+
 ### Fixed
 
 - **Switch-based actions no longer replay a stale `set_bus` snapshot.**
@@ -34,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Expect different results for REPAS coupling actions: 1 910 of the 2 972
   coupler-only actions of `All_France_actions_from_REPAS.2024.12.10` carried
-  a `-1` in their shipped `set_bus`.
+  a `-1` in their shipped `set_bus` (#126).
 
 ## [0.3.3.post2] - 2026-11-09
 
