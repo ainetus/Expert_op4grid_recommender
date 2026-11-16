@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`antenna_meta` on the pypowsybl backend.** The production and consumption
+  of an islanded pocket read as 0 MW and every pocket was reported
+  `"consumer"`, producer pockets included: `PypowsyblObservation` has no
+  `gen_to_subid` / `load_to_subid`, and a producing generator has a negative
+  `p` there (IIDM receptor convention; IEEE 14: `target_p = 232.4`,
+  `p = -232.4`). New `utils/injections.py` helpers count production positive
+  and locate generators / loads on both backends; `antenna_graph` uses them.
+
+### Added
+
+- **Detection of antennas hanging off the constrained path**
+  (`graph_analysis/structural_antennas.py`, phase 1 of
+  `docs/recommender/evacuation_antennas.md`). `detect_structural_antennas`
+  removes one side of the constrained path from the overflow graph (branches in
+  service in N-1 only) and keeps the components tied to it through a single
+  node: upstream exporters are typed **evacuation antennas**. Their branches
+  are gray (zero report in DC), so today they are invisible to the structured
+  graph and to the injection levers. Not wired into the pipeline yet.
+
 ## [0.3.3.post3] - 2026-11-12
 
 ### Fixed

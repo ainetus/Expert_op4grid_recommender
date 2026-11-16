@@ -48,6 +48,7 @@ import pandas as pd
 from alphaDeesp.core.graphsAndPaths import OverFlowGraph, Structured_Overload_Distribution_Graph
 
 from expert_op4grid_recommender.config import PARAM_OPTIONS_EXPERT_OP
+from expert_op4grid_recommender.utils.injections import injections_by_sub
 
 # Retained for backward compatibility (older consumers / the viewer's optional
 # node-hiding hook). The current builder no longer injects a synthetic source
@@ -56,24 +57,14 @@ SOURCE_NODE_NAME = "__GRID_SOURCE__"
 
 
 def _sub_injections(obs: Any) -> Tuple[np.ndarray, np.ndarray]:
-    """Per-substation production and load (MW), indexed by substation id."""
-    n_sub = len(obs.name_sub)
-    prod = np.zeros(n_sub, dtype=float)
-    load = np.zeros(n_sub, dtype=float)
+    """Per-substation production and load (MW), indexed by substation id.
 
-    gen_p = getattr(obs, "gen_p", None)
-    gen_to_subid = getattr(obs, "gen_to_subid", None)
-    if gen_p is not None and gen_to_subid is not None:
-        for p, sid in zip(gen_p, gen_to_subid):
-            prod[int(sid)] += float(p)
-
-    load_p = getattr(obs, "load_p", None)
-    load_to_subid = getattr(obs, "load_to_subid", None)
-    if load_p is not None and load_to_subid is not None:
-        for p, sid in zip(load_p, load_to_subid):
-            load[int(sid)] += float(p)
-
-    return prod, load
+    Production is counted positive and elements are located on both backends.
+    Reading ``gen_to_subid`` / raw ``gen_p`` directly zeroed every pocket on
+    pypowsybl (no ``gen_to_subid`` there, and producing generators have a
+    negative ``p``), so ``antenna_meta`` always said 0 MW / ``"consumer"``.
+    """
+    return injections_by_sub(obs)
 
 
 def _build_topo(obs: Any) -> Dict[str, Any]:

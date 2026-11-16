@@ -160,6 +160,44 @@ def test_antenna_meta_producer_direction():
     assert meta["net_mw"] == pytest.approx(140.0)
 
 
+def _as_pypowsybl_obs(obs):
+    """Re-express a fake obs the way ``PypowsyblObservation`` exposes it: no
+    ``gen_to_subid`` / ``load_to_subid`` (only ``get_obj_connect_to``) and a
+    producing generator reported with a negative ``p``."""
+    gen_sub, load_sub = list(obs.gen_to_subid), list(obs.load_to_subid)
+
+    def get_obj_connect_to(substation_id):
+        return {
+            "generators_id": [i for i, s in enumerate(gen_sub) if s == substation_id],
+            "loads_id": [i for i, s in enumerate(load_sub) if s == substation_id],
+            "lines_or_id": [], "lines_ex_id": [],
+        }
+
+    fields = {k: v for k, v in vars(obs).items()
+              if k not in ("gen_to_subid", "load_to_subid")}
+    fields["gen_p"] = -np.asarray(obs.gen_p, dtype=float)
+    return types.SimpleNamespace(**fields, get_obj_connect_to=get_obj_connect_to,
+                                 _network_manager=object())
+
+
+@pytest.mark.parametrize("antenna_prod, direction, prod_mw, net_mw", [
+    (None, "consumer", 0.0, -60.0),
+    ((2, 200.0), "producer", 200.0, 140.0),
+])
+def test_antenna_meta_pypowsybl_convention(antenna_prod, direction, prod_mw, net_mw):
+    """pypowsybl observation: the pocket's prod/load are still found and signed
+    (they used to read 0 MW, and every pocket came out ``"consumer"``)."""
+    obs = _as_pypowsybl_obs(_make_obs(antenna_prod=antenna_prod))
+    ctx = extract_antenna_context(obs, [list(obs.name_line).index("CONSTRAINT")])
+    *_, meta = build_antenna_overflow_graph(
+        obs, ctx["constraint_line_id"], ctx["antenna_sub_ids"], ctx["root_sub_id"])
+
+    assert meta["direction"] == direction
+    assert meta["total_prod_mw"] == pytest.approx(prod_mw)
+    assert meta["total_load_mw"] == pytest.approx(60.0)
+    assert meta["net_mw"] == pytest.approx(net_mw)
+
+
 def _make_exporting_obs():
     """A pocket that EXPORTS power up to the main grid (amont-islanded case).
 

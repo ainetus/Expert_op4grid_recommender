@@ -40,6 +40,11 @@ docs/
 Design specs for the corrective action types the recommender proposes.
 - [`recommender/antenna_overflow_graph.md`](recommender/antenna_overflow_graph.md) —
   overflow-graph handling for islanded-pocket ("antenna") contingencies.
+- [`recommender/evacuation_antennas.md`](recommender/evacuation_antennas.md) —
+  lateral evacuation antennas hanging off the upstream constrained path (single
+  attachment point, ~zero report) as an overflow-graph structural element, then
+  as a recommendation lever. **Phases 0–1 implemented** (detection, not wired
+  into the pipeline yet); phases 2–7 planned.
 - [`recommender/load_shedding.md`](recommender/load_shedding.md) — load shedding
   (downstream consumption reduction) as a corrective action type.
 - [`recommender/renewable_curtailment.md`](recommender/renewable_curtailment.md) —
