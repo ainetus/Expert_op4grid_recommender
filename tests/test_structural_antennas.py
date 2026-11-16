@@ -2,13 +2,15 @@
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # SPDX-License-Identifier: MPL-2.0
-"""Unit tests for the detection of antennas hanging off the constrained path.
+"""Tests for the antennas hanging off the constrained path: detection, typing
+on the overflow graph and integration in the analysis pipeline.
 
 The overflow graph is built the way the pipeline builds it — flow change after
 cutting the overload, ``_compute_delta_flow_frame`` (the twin of alphaDeesp's
 ``create_df``), ``OverFlowGraph`` and ``Structured_Overload_Distribution_Graph``
-— from a DC load flow on a hand-made grid, so these tests need neither
-pypowsybl nor a real environment.
+— from a DC load flow on a hand-made grid, so most tests need neither
+pypowsybl nor a real environment. The two end-to-end tests (IEEE 14 and the
+pipeline's small test grid) skip without pypowsybl.
 
 See ``docs/recommender/evacuation_antennas.md``.
 """
@@ -16,12 +18,15 @@ See ``docs/recommender/evacuation_antennas.md``.
 import copy
 import json
 import types
+from unittest.mock import MagicMock
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 import pytest
 from alphaDeesp.core.graphsAndPaths import OverFlowGraph, Structured_Overload_Distribution_Graph
 
+from expert_op4grid_recommender import config, pipeline
 from expert_op4grid_recommender.graph_analysis.antenna_graph import (
     _build_topo,
     _compute_delta_flow_frame,
@@ -29,6 +34,12 @@ from expert_op4grid_recommender.graph_analysis.antenna_graph import (
 )
 from expert_op4grid_recommender.graph_analysis.structural_antennas import (
     detect_structural_antennas,
+    tag_structural_antennas,
+)
+from expert_op4grid_recommender.pipeline import (
+    AnalysisContext,
+    run_analysis_step2_discovery,
+    run_analysis_step2_graph,
 )
 
 # Topology (A0 is the slack)::
@@ -388,3 +399,217 @@ def test_to_dict_is_a_plain_payload():
     assert type(payload["attachment_node"]) is str
     assert all(type(n) is str for n in payload["nodes"])
     json.dumps(payload)
+
+
+# ---------------------------------------------------------------------------
+# Typing on the overflow graph (phase 2)
+# ---------------------------------------------------------------------------
+
+_TAG_KEYS = ("antenna_id", "antenna_type", "in_evacuation_antenna", "is_antenna_attachment")
+
+
+def _tagged_overflow_graph():
+    obs = _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    tag_structural_antennas(g_overflow, detect_structural_antennas(g_overflow, sdg, obs))
+    return g_overflow
+
+
+def _alphadeesp_views(sdg):
+    cp = sdg.get_constrained_path()
+    return (list(cp.n_amont()), list(cp.n_aval()), sdg.get_constrained_edges_nodes(),
+            sdg.get_dispatch_edges_nodes(only_loop_paths=True), sdg.get_hubs())
+
+
+def test_tagging_types_antenna_nodes_and_branches():
+    g_overflow = _tagged_overflow_graph()
+    nodes = g_overflow.g.nodes
+    for sub in ("E1", "E2", "E3"):
+        assert nodes[sub]["antenna_id"] == "EVAC_A1_1"
+        assert nodes[sub]["antenna_type"] == "evacuation"
+        assert nodes[sub]["in_evacuation_antenna"] is True
+    assert nodes["C1"]["antenna_id"] == "CONS_UP_A1_1"
+    assert nodes["C1"]["in_evacuation_antenna"] is False
+    assert nodes["A1"]["is_antenna_attachment"] is True
+    assert "antenna_id" not in nodes["A1"]
+
+    tagged = {data["name"]: data["antenna_id"] for _, _, data in g_overflow.g.edges(data=True)
+              if "antenna_id" in data}
+    assert tagged == {"A1_E1": "EVAC_A1_1", "A1_E1_b": "EVAC_A1_1", "E1_E2": "EVAC_A1_1",
+                      "E2_E3": "EVAC_A1_1", "E3_E1": "EVAC_A1_1", "A1_C1": "CONS_UP_A1_1"}
+    # Only antenna nodes and attachment points carry a tag (D1 is gray, not an antenna).
+    assert {n for n, d in g_overflow.g.nodes(data=True) if any(k in d for k in _TAG_KEYS)} \
+        == {"A1", "C1", "E1", "E2", "E3"}
+
+
+def test_tagging_changes_nothing_but_the_tags():
+    """Colours, reports, labels and the alphaDeesp views (constrained path,
+    red loops, hubs) are the same once the tags are set."""
+    obs = _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    nodes_before = copy.deepcopy(list(g_overflow.g.nodes(data=True)))
+    edges_before = copy.deepcopy(list(g_overflow.g.edges(keys=True, data=True)))
+    views_before = _alphadeesp_views(sdg)
+
+    tag_structural_antennas(g_overflow, detect_structural_antennas(g_overflow, sdg, obs))
+
+    def untagged(data):
+        return {k: v for k, v in data.items() if k not in _TAG_KEYS}
+
+    assert [(n, untagged(d)) for n, d in g_overflow.g.nodes(data=True)] == nodes_before
+    assert [(u, v, k, untagged(d)) for u, v, k, d in g_overflow.g.edges(keys=True, data=True)] \
+        == edges_before
+    assert _alphadeesp_views(Structured_Overload_Distribution_Graph(g_overflow.g)) == views_before
+
+
+def test_tags_survive_relabelling_to_ids():
+    """Discovery's pre-processing renumbers the nodes; the tags follow them."""
+    g_overflow = _tagged_overflow_graph()
+    g_ids = nx.relabel_nodes(g_overflow.g, {n: i for i, n in enumerate(SUBS)}, copy=True)
+    assert g_ids.nodes[SUB["E2"]]["antenna_id"] == "EVAC_A1_1"
+    assert g_ids.nodes[SUB["A1"]]["is_antenna_attachment"] is True
+
+
+def test_tagged_graph_still_converts_to_dot():
+    """The visualization goes through pydot: the tags must not break it."""
+    pydot = pytest.importorskip("pydot")
+    dot = nx.nx_pydot.to_pydot(_tagged_overflow_graph().g).to_string()
+    assert "EVAC_A1_1" in dot
+    assert pydot.graph_from_dot_data(dot)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline integration (phase 2)
+# ---------------------------------------------------------------------------
+
+def _step2_context(obs=None):
+    """Step-1 context whose fake backend hands back the fixture overflow graph."""
+    obs = obs if obs is not None else _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    cut = [line[0] for line in LINES].index("O_X")
+
+    class _FakeBackend:
+        is_pypowsybl = False
+        branch_candidates_from_baseline = False
+        use_shared_baseline_for_topological = False
+        fast_mode = True
+
+        def check_simu_overloads(self, *args, **kwargs):
+            return True, False
+
+        def build_overflow_graph(self, *args, **kwargs):
+            df = pd.DataFrame({"new_flows_swapped": pd.Series([], dtype=bool),
+                               "line_name": pd.Series([], dtype=str)})
+            return df, MagicMock(), g_overflow, [], sdg, dict(enumerate(SUBS))
+
+    return AnalysisContext(
+        backend=_FakeBackend(), env=MagicMock(), obs=obs, obs_simu_defaut=obs,
+        current_lines_defaut=["E2_R1"], lines_overloaded_ids=[cut],
+        lines_overloaded_ids_kept=[cut], lines_overloaded_names=["O_X"],
+        lines_non_reconnectable=[], non_connected_reconnectable_lines=[],
+        dict_action={}, classifier=MagicMock(), chronic_name="test",
+    )
+
+
+def test_step2_graph_detects_and_tags_the_antennas():
+    context = run_analysis_step2_graph(_step2_context())
+    assert [a.antenna_id for a in context.structural_antennas] == ["EVAC_A1_1", "CONS_UP_A1_1"]
+    assert context.g_overflow.g.nodes["E2"]["antenna_id"] == "EVAC_A1_1"
+
+
+def test_step2_graph_detection_can_be_disabled(monkeypatch):
+    monkeypatch.setattr(config, "ENABLE_STRUCTURAL_ANTENNAS", False)
+    context = run_analysis_step2_graph(_step2_context())
+    assert context.structural_antennas == []
+    assert not any(k in d for _, d in context.g_overflow.g.nodes(data=True) for k in _TAG_KEYS)
+
+
+def test_step2_graph_survives_a_detection_failure(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(pipeline, "detect_structural_antennas", _boom)
+    context = run_analysis_step2_graph(_step2_context())
+    assert context.structural_antennas == []
+    assert context.g_distribution_graph is not None
+
+
+def test_pocket_mode_skips_the_detection(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pipeline, "detect_structural_antennas",
+                        lambda *args, **kwargs: calls.append(args) or [])
+    obs = _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    monkeypatch.setattr(pipeline, "build_antenna_overflow_graph",
+                        lambda *args, **kwargs: (None, None, g_overflow, [], sdg, {}, {}))
+    context = _step2_context(obs)
+    context.update({"antenna_mode": True, "antenna_info": {
+        "constraint_line_id": 0, "antenna_sub_ids": [], "root_sub_id": 0}})
+
+    context = run_analysis_step2_graph(context)
+    assert context.structural_antennas == []
+    assert calls == []
+
+
+def test_discovery_hands_the_antennas_to_the_model_and_the_result(monkeypatch):
+    from expert_op4grid_recommender.models import _expert_discovery
+    from expert_op4grid_recommender.models.base import RecommenderModel, RecommenderOutput
+    from expert_op4grid_recommender.utils import reassessment
+
+    class _Spy(RecommenderModel):
+        name = "spy"
+        label = "Spy"
+
+        @classmethod
+        def params_spec(cls):
+            return []
+
+        def recommend(self, inputs, params):
+            self.inputs = inputs
+            return RecommenderOutput(prioritized_actions={})
+
+    monkeypatch.setattr(_expert_discovery, "_run_expert_action_filter", lambda context: None)
+    monkeypatch.setattr(reassessment, "reassess_prioritized_actions",
+                        lambda actions, context: ({}, []))
+    monkeypatch.setattr(reassessment, "compute_combined_pairs", lambda actions, context: {})
+
+    context = run_analysis_step2_graph(_step2_context())
+    spy = _Spy()
+    result = run_analysis_step2_discovery(context, recommender=spy)
+
+    assert spy.inputs.structural_antennas is context.structural_antennas
+    assert [a["antenna_id"] for a in result["structural_antennas"]] == ["EVAC_A1_1", "CONS_UP_A1_1"]
+    assert result.structural_antennas[0]["export_mw"] == pytest.approx(145.0)
+    json.dumps(result.structural_antennas)
+
+
+def test_structural_antennas_leave_the_recommendations_unchanged():
+    """Non-regression guard: phase 2 only types the antennas. On the pipeline's
+    small test grid (pypowsybl), where 5 antennas are detected and tagged, the
+    prioritized actions and every score are the same with and without it."""
+    pytest.importorskip("pypowsybl")
+    from expert_op4grid_recommender.backends import Backend
+
+    saved = config.get_settings()
+    results = {}
+    try:
+        for enabled in (False, True):
+            config.override_settings(
+                ENV_NAME="bare_env_small_grid_test",
+                FILE_ACTION_SPACE_DESC="reduced_model_actions_test_pypowsybl.json",
+                ENABLE_STRUCTURAL_ANTENNAS=enabled,
+            )
+            results[enabled] = pipeline.run_analysis(
+                analysis_date=None, current_timestep=0,
+                current_lines_defaut=["P.SAOL31RONCI"], backend=Backend.PYPOWSYBL,
+            )
+    finally:
+        config.override_settings(saved)
+
+    off, on = results[False], results[True]
+    assert off.structural_antennas == []
+    assert [a["antenna_id"] for a in on.structural_antennas[:2]] == ["EVAC_SSV.OP7_1",
+                                                                      "EVAC_VIELMP7_1"]
+    assert set(on.prioritized_actions) == set(off.prioritized_actions)
+    assert any(family["scores"] for family in on.action_scores.values())  # not vacuous
+    assert on.action_scores == off.action_scores

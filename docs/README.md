@@ -43,8 +43,8 @@ Design specs for the corrective action types the recommender proposes.
 - [`recommender/evacuation_antennas.md`](recommender/evacuation_antennas.md) —
   lateral evacuation antennas hanging off the upstream constrained path (single
   attachment point, ~zero report) as an overflow-graph structural element, then
-  as a recommendation lever. **Phases 0–1 implemented** (detection, not wired
-  into the pipeline yet); phases 2–7 planned.
+  as a recommendation lever. **Phases 0–2 implemented** (detection, typing on
+  the overflow graph, analysis payload); phases 3–7 planned.
 - [`recommender/load_shedding.md`](recommender/load_shedding.md) — load shedding
   (downstream consumption reduction) as a corrective action type.
 - [`recommender/renewable_curtailment.md`](recommender/renewable_curtailment.md) —

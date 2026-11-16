@@ -149,6 +149,7 @@ step-2 graph (or when the operator opted in for a non-requiring model).
 | `act_reco_maintenance`               | Action object that performs the scheduled maintenance reconnections.        |
 | `use_dc: bool`                       | True when step-2 fell back to DC load flow.                                 |
 | `filtered_candidate_actions`         | **Action IDs retained by the expert rule filter.** `None` when the filter didn't run; `[]` when it ran with no result. Forwarded so non-expert models that declare `requires_overflow_graph=True` (e.g. `RandomOverflowRecommender`) can sample inside the same reduced action space. |
+| `structural_antennas`                | Antennas hanging off the constrained path (`StructuralAntenna` objects, e.g. evacuation antennas), also tagged on `overflow_graph`. `[]` in the islanded-pocket case or when `ENABLE_STRUCTURAL_ANTENNAS` is off. See `docs/recommender/evacuation_antennas.md`. |
 
 ### Backend metadata
 

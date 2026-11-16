@@ -29,6 +29,9 @@ angle, so the report on every antenna branch is exactly 0, even for an
 internally meshed antenna. AC leaves a residual (losses, distributed slack),
 reported as ``report_ratio_max`` / ``is_insensitive``.
 
+``tag_structural_antennas`` then types the detected antennas on the overflow
+graph itself, as node / edge attributes.
+
 See ``docs/recommender/evacuation_antennas.md``.
 """
 import logging
@@ -348,3 +351,41 @@ def detect_structural_antennas(
         counters[stem] = counters.get(stem, 0) + 1
         antenna.antenna_id = f"{stem}_{counters[stem]}"
     return antennas
+
+
+def tag_structural_antennas(g_overflow: Any, antennas: Sequence[StructuralAntenna]) -> None:
+    """Type the antennas on the overflow graph, in place.
+
+    Antenna nodes and branches (connection and internal lines) get
+    ``antenna_id``, ``antenna_type`` and ``in_evacuation_antenna``; attachment
+    nodes get ``is_antenna_attachment``. Elements outside any antenna are left
+    untouched, so an absent attribute means "no". The attributes survive the
+    re-labelling of ``pre_process_graph_alphadeesp``; colours, reports and
+    labels are not modified.
+
+    Args:
+        g_overflow: ``OverFlowGraph`` (or its networkx graph) the antennas were
+            detected on.
+        antennas: output of :func:`detect_structural_antennas`.
+    """
+    g = getattr(g_overflow, "g", g_overflow)
+    tags_of_line: Dict[str, Dict[str, Any]] = {}
+    for antenna in antennas:
+        tags = {
+            "antenna_id": antenna.antenna_id,
+            "antenna_type": antenna.antenna_type,
+            "in_evacuation_antenna": antenna.antenna_type == "evacuation",
+        }
+        for node in antenna.nodes:
+            if node in g:
+                g.nodes[node].update(tags)
+        if antenna.attachment_node in g:
+            g.nodes[antenna.attachment_node]["is_antenna_attachment"] = True
+        for line in antenna.connection_lines + antenna.internal_lines:
+            tags_of_line[line] = tags
+    if not tags_of_line:
+        return
+    for _, _, data in g.edges(data=True):
+        tags = tags_of_line.get(str(data.get("name")))
+        if tags is not None:
+            data.update(tags)

@@ -1,9 +1,9 @@
 # Plan — Antennes d'évacuation : un élément de structure du graphe de report
 
-> **Statut** : plan de conception. **Phases 0 et 1 implémentées** (branche
+> **Statut** : plan de conception. **Phases 0 à 2 implémentées** (branche
 > `feat/evacuation-antennas`) : helpers d'injection `utils/injections.py`, correctif
-> d'`antenna_meta` en pypowsybl, détection `graph_analysis/structural_antennas.py`.
-> Phases 2 à 7 à faire.
+> d'`antenna_meta` en pypowsybl, détection `graph_analysis/structural_antennas.py`, typage
+> sur le graphe et payload du pipeline. Phases 3 à 7 à faire.
 > **Date** : 2026-11-16 · base `main` = `ainetus/main` `377301c3` (0.3.3.post3).
 > **Objet** : détecter sur le graphe de report (overflow graph) les antennes latérales
 > raccordées en un point du chemin en contrainte amont, les typer « antenne d'évacuation »,
@@ -289,25 +289,38 @@ valeurs par défaut laissent les recommandations **identiques**.
   antenne d'évacuation éolienne de 231,5 MW à report nul.
 - Reste à mesurer : le coût sur un grand réseau (objectif < 50 ms, Phase 6).
 
-### Phase 2 — Intégration comme élément de structure *(S)*
+### Phase 2 — Intégration comme élément de structure *(S)* — **fait**
 
-- `config.py` : `ENABLE_STRUCTURAL_ANTENNAS = True`. Ce drapeau couvre détection, typage et
-  payload, **sans effet** sur les recommandations.
-- `pipeline.py` :
-  - appel juste après `backend.build_overflow_graph(...)` (`pipeline.py:556`), hors mode poche ;
-  - `AnalysisContext.structural_antennas` et `AnalysisResult.structural_antennas` (liste de
-    dicts) ;
-  - `RecommenderInputs.structural_antennas` (`models/base.py`) et `build_recommender_inputs`.
-- Typage du graphe d'analyse par **attributs** (nœuds et arêtes) : `in_evacuation_antenna`,
-  `antenna_id`, `antenna_type`, plus `is_antenna_attachment` sur `a`. Ces attributs survivent
-  au `relabel_nodes` de `pre_process_graph_alphadeesp`.
-- Journal, par exemple : « Antenne d'évacuation EVAC_… raccordée à X : 3 postes, export
-  118 MW, report max 0,4 % ».
-- Tests :
-  - contexte et résultat peuplés ;
-  - `action_scores` et `prioritized_actions` **identiques** avec ou sans détection (garde de
-    non-régression) ;
-  - vues alphaDeesp inchangées après l'ajout des attributs.
+- `config.py` : `ENABLE_STRUCTURAL_ANTENNAS = True`, `STRUCTURAL_ANTENNA_MIN_MW = 1.0`,
+  `STRUCTURAL_ANTENNA_MAX_FRACTION = 0.25`. Le drapeau couvre détection, typage et payload,
+  **sans effet** sur les recommandations.
+- `pipeline.py` : `_detect_structural_antennas` est appelé dans `run_analysis_step2_graph`
+  juste après `backend.build_overflow_graph(...)`, donc avant le rendu et avant que la
+  découverte ne renumérote les nœuds. Il ne tourne pas en mode poche, où
+  `structural_antennas` vaut `[]`. Un échec de la détection est journalisé et n'interrompt
+  pas l'analyse.
+- Données exposées :
+  - `AnalysisContext.structural_antennas` et `RecommenderInputs.structural_antennas` : les
+    objets `StructuralAntenna` (`None` tant que l'étape 2 n'a pas tourné) ;
+  - `AnalysisResult.structural_antennas` : la liste des `to_dict()`, sérialisable en JSON.
+- `tag_structural_antennas` type le graphe d'analyse par **attributs**. Nœuds et branches
+  d'une antenne reçoivent `antenna_id`, `antenna_type` et `in_evacuation_antenna` ; le nœud de
+  raccordement reçoit `is_antenna_attachment`. Un attribut absent vaut « non ». Les attributs
+  survivent au `relabel_nodes` de `pre_process_graph_alphadeesp`.
+- Journal : une ligne de synthèse, puis une ligne par antenne d'évacuation, par exemple
+  « EVAC_SSV.OP7_1 attached to SSV.OP7: 2 node(s), export 1704 MW, max report 0.0% ».
+- Tests dans `tests/test_structural_antennas.py` :
+  - typage : nœuds, branches et raccordement ; rien d'autre ne change et les vues alphaDeesp
+    (chemin contraint, boucles rouges, hubs) restent identiques ; les attributs survivent à la
+    renumérotation ; le graphe se convertit toujours en DOT ;
+  - pipeline, avec un faux backend : contexte peuplé et graphe typé, drapeau coupé, échec de
+    la détection, mode poche, transmission au modèle et au résultat ;
+  - garde de non-régression de bout en bout sur le petit réseau de test (pypowsybl,
+    P.SAOL31RONCI) : `prioritized_actions` et `action_scores` **identiques** avec ou sans
+    détection, alors que 5 antennes y sont détectées et typées (≈ 14 s, deux analyses).
+- Mesuré sur ce cas (93 nœuds) : 5 antennes, dont 3 d'évacuation, en 1,5 à 2,4 ms.
+  `EVAC_SSV.OP7_1` (BUGEYP1 et BUGEYP7) exporte 1 704 MW ; `EVAC_VIELMP7_1` (7 postes)
+  exporte 795 MW, avec un report maximal de 4 % en AC, sous le seuil de 5 %.
 
 ### Phase 3 — Rendu et viewer *(M, dont une PR amont)*
 

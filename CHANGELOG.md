@@ -28,7 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service in N-1 only) and keeps the components tied to it through a single
   node: upstream exporters are typed **evacuation antennas**. Their branches
   are gray (zero report in DC), so today they are invisible to the structured
-  graph and to the injection levers. Not wired into the pipeline yet.
+  graph and to the injection levers.
+- **Structural antennas in the analysis (phase 2).** `run_analysis_step2_graph`
+  runs the detection on the freshly built overflow graph (not in the
+  islanded-pocket case), tags the antennas on it (`antenna_id`,
+  `antenna_type`, `in_evacuation_antenna`, `is_antenna_attachment`) and exposes
+  them as `AnalysisContext.structural_antennas` /
+  `RecommenderInputs.structural_antennas` (objects) and
+  `AnalysisResult.structural_antennas` (list of dicts). New config knobs
+  `ENABLE_STRUCTURAL_ANTENNAS` (default on), `STRUCTURAL_ANTENNA_MIN_MW`,
+  `STRUCTURAL_ANTENNA_MAX_FRACTION`. Typing and payload only: the prioritized
+  actions and scores are unchanged, guarded by an end-to-end test.
 
 ## [0.3.3.post3] - 2026-11-12
 
