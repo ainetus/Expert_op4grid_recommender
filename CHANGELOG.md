@@ -73,6 +73,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IEEE 14 that share reversed a 3 MW raise). `PypowsyblObservation` gains
   `gen_pmax` (grid2op's name) and `gen_target_p` for that. Off by default:
   the families are unchanged.
+- **Evacuation antennas drawn in the reduced overflow graph (phase 3).**
+  Their branches are gray, so the reduced view (`DRAW_ONLY_SIGNIFICANT_EDGES`)
+  used to drop them entirely. The drawing is done in ExpertOp4Grid
+  (`OverflowGraphRenderer.prepare_for_plot`, PR ainetus/ExpertOp4Grid#80,
+  not yet released). The reduced view now
+  keeps the branches flagged `in_evacuation_antenna` and draws them in ochre
+  yellow, with their report label and arrow like any other edge. The
+  interactive viewer gets an **Evacuation antennas** layer to show or hide
+  them. The drawing works on a copy, because alphaDeesp derives the analysis
+  views from the colours. Nothing changes here: the tagging already stamps
+  the flag, and the current expertop4grid ignores it. The floor will be bumped
+  with the release.
 
 ## [0.3.3.post3] - 2026-11-12
 

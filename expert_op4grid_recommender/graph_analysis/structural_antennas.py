@@ -411,6 +411,10 @@ def tag_structural_antennas(g_overflow: Any, antennas: Sequence[StructuralAntenn
     re-labelling of ``pre_process_graph_alphadeesp``; colours, reports and
     labels are not modified.
 
+    ExpertOp4Grid's renderer reads ``in_evacuation_antenna``: it keeps the
+    evacuation antennas in the reduced view (``without_gray_edges``), drawn in
+    ochre with their report, and its interactive viewer offers them as a layer.
+
     Args:
         g_overflow: ``OverFlowGraph`` (or its networkx graph) the antennas were
             detected on.

@@ -365,18 +365,49 @@ valeurs par défaut laissent les recommandations **identiques**.
   `EVAC_SSV.OP7_1` (BUGEYP1 et BUGEYP7) exporte 1 704 MW ; `EVAC_VIELMP7_1` (7 postes)
   exporte 795 MW, avec un report maximal de 4 % en AC, sous le seuil de 5 %.
 
-### Phase 3 — Rendu et viewer *(M, dont une PR amont)*
+### Phase 3 — Rendu et viewer *(M, dans ExpertOp4Grid)* — **fait, en attente de release amont**
 
-- `visualization.make_overflow_graph_visualization(..., structural_antennas=...)` travaille
-  sur une **copie** du graphe (comme `focus_overflow_graph_on_pocket`) :
-  - couleur dédiée aux arêtes d'antenne, pour qu'elles survivent à `without_gray_edges` ;
-  - étiquette = export (MW) plutôt que Δ ≈ 0 ;
-  - le graphe d'analyse n'est pas modifié.
-- PR ExpertOp4Grid : couche sémantique `in_evacuation_antenna` (section « Structural paths »,
-  glyphe dédié) dans `interactive_html._SEMANTIC_LAYERS` / `_LAYER_SECTIONS`, puis
-  relèvement du plancher `expertop4grid` ici.
-- Tests : attributs posés ; couleurs du graphe d'analyse inchangées après le rendu ; arêtes
-  d'antenne présentes dans le rendu filtré.
+Le rendu est fait dans ExpertOp4Grid (PR ainetus/ExpertOp4Grid#80, branche
+`claude/evacuation-antenna-layer`), et non plus sur une copie de rendu ici. Pourquoi l'amont :
+
+- le filtre de la vue réduite, `delete_color_edges(g, "gray")`, ne regarde que la couleur ;
+- recolorer le graphe d'analyse ici changerait l'analyse elle-même : alphaDeesp construit ses
+  vues (chemin contraint, boucles, hubs) à partir des couleurs, et la découverte les
+  reconstruit après le dessin (`pre_process_graph_alphadeesp`, `AlphaDeesp_warmStart`) ;
+- la couche du viewer demandait de toute façon une PR amont.
+
+Côté ExpertOp4Grid :
+
+- **Rendu.** `OverflowGraphRenderer.prepare_for_plot` construit le graphe dessiné. La vue
+  réduite garde les arêtes grises marquées `in_evacuation_antenna`, et donc les nœuds de
+  l'antenne. Ces arêtes sont dessinées en jaune ocre (`darkgoldenrod`). Elles suivent les
+  mêmes conventions que les autres : étiquette = report, flèche dans le sens du report.
+- **Copie.** Le dessin travaille sur une copie : le graphe d'analyse garde ses couleurs, et
+  `base_color="gray"` conserve le rôle « insignifiant ».
+- **Filtre.** `delete_color_edges` gagne `keep_flags`, que les vues d'analyse ne passent jamais.
+- **Viewer.** Une couche « Evacuation antennas » s'ajoute dans la section *Structural Paths*,
+  avec son glyphe : un filtre pour afficher l'antenne seule, ou la masquer.
+
+Côté recommandeur, rien de spécifique : `tag_structural_antennas` pose déjà le marqueur, et
+`make_overflow_graph_visualization` appelle `plot`, qui passe par `prepare_for_plot`.
+
+Les nœuds de l'antenne prennent leurs couleurs d'injection comme les autres : corail pour
+un nœud producteur, bleu clair pour un consommateur. Il a fallu corriger un défaut qui
+touchait tous les nœuds en backend pypowsybl (voir le CHANGELOG, `alphadeesp_node_injections`) :
+aucun nœud n'y était producteur, et V.ILEP3 affichait 0 MW au lieu des 234 MW du parc.
+
+Avec l'expertop4grid actuel, le marqueur est ignoré au tracé et l'antenne reste élaguée. Le
+rendu s'active à la release amont qui embarque la branche, avec un relèvement du plancher
+`expertop4grid` ici.
+
+Vérifié sur le cas Vendée 6 (`MERLAL62SOULL`) avec l'alphaDeesp de la branche :
+
+- la vue réduite passe de 26 nœuds et 36 arêtes à 33 nœuds et 50 arêtes ;
+- les 7 postes de Vent des Îles et leurs 14 branches y figurent en ocre ;
+- la couche « Evacuation antennas » compte 7 nœuds et 14 arêtes.
+
+Les antennes de consommation ne sont pas marquées `in_evacuation_antenna` : elles restent
+élaguées de la vue réduite.
 
 ### Phase 4 — Levier « modulation de production dans l'antenne » *(M/L)* — **fait**
 
