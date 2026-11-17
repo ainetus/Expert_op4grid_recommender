@@ -24,7 +24,7 @@ Every helper returns production counted **positive** (a generator absorbing
 power, e.g. a pump, comes out negative) and consumption counted positive,
 indexed like ``obs.gen_p`` / ``obs.load_p``.
 """
-from typing import Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -102,3 +102,27 @@ def injections_by_sub(obs: Any) -> Tuple[np.ndarray, np.ndarray]:
     prod = _sum_by_sub(production_mw(obs), gen_to_subid(obs), n_sub)
     load = _sum_by_sub(consumption_mw(obs), load_to_subid(obs), n_sub)
     return prod, load
+
+
+def alphadeesp_node_injections(obs: Any) -> Dict[str, List[Any]]:
+    """Per-substation injections in the shape alphaDeesp's ``build_nodes`` reads.
+
+    ``are_prods`` / ``are_loads`` flag the substations holding a generator / a
+    load. ``prods_values`` / ``loads_values`` hold one value per *flagged*
+    substation, in substation order: ``build_nodes`` takes the next value only
+    for a flagged substation, so a full per-substation array would shift the
+    values onto other nodes. Each node then reads ``prod - load``: a production
+    node (coral) or a consumption node (light blue).
+    """
+    n_sub = len(obs.name_sub)
+    gen_sub, load_sub = gen_to_subid(obs), load_to_subid(obs)
+    prod = _sum_by_sub(production_mw(obs), gen_sub, n_sub)
+    load = _sum_by_sub(consumption_mw(obs), load_sub, n_sub)
+    are_prods = _sum_by_sub(np.ones(len(gen_sub)), gen_sub, n_sub) > 0
+    are_loads = _sum_by_sub(np.ones(len(load_sub)), load_sub, n_sub) > 0
+    return {
+        "are_prods": are_prods.tolist(),
+        "are_loads": are_loads.tolist(),
+        "prods_values": prod[are_prods].tolist(),
+        "loads_values": load[are_loads].tolist(),
+    }

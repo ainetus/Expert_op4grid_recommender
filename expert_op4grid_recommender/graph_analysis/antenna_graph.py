@@ -48,7 +48,10 @@ import pandas as pd
 from alphaDeesp.core.graphsAndPaths import OverFlowGraph, Structured_Overload_Distribution_Graph
 
 from expert_op4grid_recommender.config import PARAM_OPTIONS_EXPERT_OP
-from expert_op4grid_recommender.utils.injections import injections_by_sub
+from expert_op4grid_recommender.utils.injections import (
+    alphadeesp_node_injections,
+    injections_by_sub,
+)
 
 # Retained for backward compatibility (older consumers / the viewer's optional
 # node-hiding hook). The current builder no longer injects a synthetic source
@@ -71,21 +74,16 @@ def _build_topo(obs: Any) -> Dict[str, Any]:
     """Full-grid topology dict in the shape ``OverFlowGraph`` expects.
 
     Mirrors ``AlphaDeespAdapter._build_topo`` / ``Grid2opSimulation.topo``:
-    one entry per line (original orientation) and per substation (prod/load).
+    one entry per line (original orientation), and the per-substation
+    injections in the compact shape ``build_nodes`` reads (see
+    ``alphadeesp_node_injections``).
     """
     n = len(obs.name_line)
     idx_or = [int(obs.line_or_to_subid[i]) for i in range(n)]
     idx_ex = [int(obs.line_ex_to_subid[i]) for i in range(n)]
-    prod, load = _sub_injections(obs)
     return {
         "edges": {"idx_or": idx_or, "idx_ex": idx_ex},
-        "nodes": {
-            "are_prods": (prod > 0).tolist(),
-            "are_loads": (load > 0).tolist(),
-            "prods_values": prod.tolist(),
-            "loads_values": load.tolist(),
-            "names": list(obs.name_sub),
-        },
+        "nodes": {**alphadeesp_node_injections(obs), "names": list(obs.name_sub)},
     }
 
 

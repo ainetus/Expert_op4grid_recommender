@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `p` there (IIDM receptor convention; IEEE 14: `target_p = 232.4`,
   `p = -232.4`). New `utils/injections.py` helpers count production positive
   and locate generators / loads on both backends; `antenna_graph` uses them.
+- **Node injections of the overflow graph (pypowsybl backend).** No node was
+  ever coloured as a production node, and consumption values sat on the wrong
+  nodes. alphaDeesp's `build_nodes` takes one prod / load value per *flagged*
+  substation, in substation order, but `AlphaDeespAdapter._build_topo` (and
+  the islanded-pocket `antenna_graph._build_topo`) gave it a full
+  per-substation array, so every value landed on another node. On top of
+  that, the adapter read the generators' `p` cached when the network was
+  loaded, negative for production. On the Vendée case `MERLAL62SOULL`, the
+  substation of the Vent des Îles offshore park (234 MW) read 0 MW. The new
+  `alphadeesp_node_injections` builds that compact shape from the N-1
+  observation with production counted positive, and both topologies use it.
+  Only the node attributes change (fill colour, `value`, `prod_or_load`, the
+  viewer's production / consumption layers); the analysis does not read them.
 
 ### Added
 

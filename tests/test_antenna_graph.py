@@ -433,17 +433,21 @@ def test_islanded_line_mask_marks_pocket_incident_lines_only():
 
 
 def test_build_topo_aggregates_prod_and_load_per_substation():
-    """topo['nodes'] carries per-substation prod/load over the full grid."""
+    """topo['nodes'] flags every substation and carries one prod / load value
+    per flagged one, in substation order (what alphaDeesp's build_nodes reads)."""
     obs = _make_obs(antenna_prod=(2, 200.0))  # 200 MW generation on sub 2
     topo = _build_topo(obs)
+    nodes = topo["nodes"]
 
-    assert len(topo["nodes"]["are_prods"]) == len(obs.name_sub)
+    assert len(nodes["are_prods"]) == len(obs.name_sub)
     assert len(topo["edges"]["idx_or"]) == len(obs.name_line)
+    producing = [s for s, flag in enumerate(nodes["are_prods"]) if flag]
+    consuming = [s for s, flag in enumerate(nodes["are_loads"]) if flag]
+    assert len(nodes["prods_values"]) == len(producing)
+    assert len(nodes["loads_values"]) == len(consuming)
     # Sub 2 has both the 200 MW generator and a 30 MW load.
-    assert topo["nodes"]["are_prods"][2] is True
-    assert topo["nodes"]["prods_values"][2] == pytest.approx(200.0)
-    assert topo["nodes"]["are_loads"][2] is True
-    assert topo["nodes"]["loads_values"][2] == pytest.approx(30.0)
+    assert nodes["prods_values"][producing.index(2)] == pytest.approx(200.0)
+    assert nodes["loads_values"][consuming.index(2)] == pytest.approx(30.0)
     # Original (pre-swap) line orientation is preserved in the topo edges.
     assert topo["edges"]["idx_or"] == [int(s) for s in obs.line_or_to_subid]
     assert topo["edges"]["idx_ex"] == [int(s) for s in obs.line_ex_to_subid]
