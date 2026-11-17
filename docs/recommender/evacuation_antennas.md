@@ -365,10 +365,10 @@ valeurs par défaut laissent les recommandations **identiques**.
   `EVAC_SSV.OP7_1` (BUGEYP1 et BUGEYP7) exporte 1 704 MW ; `EVAC_VIELMP7_1` (7 postes)
   exporte 795 MW, avec un report maximal de 4 % en AC, sous le seuil de 5 %.
 
-### Phase 3 — Rendu et viewer *(M, dans ExpertOp4Grid)* — **fait, en attente de release amont**
+### Phase 3 — Rendu et viewer *(M, dans ExpertOp4Grid)* — **fait (expertop4grid 0.3.4)**
 
-Le rendu est fait dans ExpertOp4Grid (PR ainetus/ExpertOp4Grid#80, branche
-`claude/evacuation-antenna-layer`), et non plus sur une copie de rendu ici. Pourquoi l'amont :
+Le rendu est fait dans ExpertOp4Grid (PR ainetus/ExpertOp4Grid#80, publiée dans la release
+v0.3.4), et non plus sur une copie de rendu ici. Pourquoi l'amont :
 
 - le filtre de la vue réduite, `delete_color_edges(g, "gray")`, ne regarde que la couleur ;
 - recolorer le graphe d'analyse ici changerait l'analyse elle-même : alphaDeesp construit ses
@@ -396,11 +396,11 @@ un nœud producteur, bleu clair pour un consommateur. Il a fallu corriger un dé
 touchait tous les nœuds en backend pypowsybl (voir le CHANGELOG, `alphadeesp_node_injections`) :
 aucun nœud n'y était producteur, et V.ILEP3 affichait 0 MW au lieu des 234 MW du parc.
 
-Avec l'expertop4grid actuel, le marqueur est ignoré au tracé et l'antenne reste élaguée. Le
-rendu s'active à la release amont qui embarque la branche, avec un relèvement du plancher
-`expertop4grid` ici.
+Le plancher est relevé à `expertop4grid>=0.3.4`. Avec une installation plus ancienne, le
+marqueur est ignoré au tracé et l'antenne reste élaguée ; le test de contrat
+(`test_reduced_drawing_keeps_the_evacuation_antennas`) est alors sauté.
 
-Vérifié sur le cas Vendée 6 (`MERLAL62SOULL`) avec l'alphaDeesp de la branche :
+Vérifié sur le cas Vendée 6 (`MERLAL62SOULL`) avec l'alphaDeesp de la PR :
 
 - la vue réduite passe de 26 nœuds et 36 arêtes à 33 nœuds et 50 arêtes ;
 - les 7 postes de Vent des Îles et leurs 14 branches y figurent en ocre ;

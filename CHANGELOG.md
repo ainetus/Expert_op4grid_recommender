@@ -77,14 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Their branches are gray, so the reduced view (`DRAW_ONLY_SIGNIFICANT_EDGES`)
   used to drop them entirely. The drawing is done in ExpertOp4Grid
   (`OverflowGraphRenderer.prepare_for_plot`, PR ainetus/ExpertOp4Grid#80,
-  not yet released). The reduced view now
+  released in expertop4grid 0.3.4). The reduced view now
   keeps the branches flagged `in_evacuation_antenna` and draws them in ochre
   yellow, with their report label and arrow like any other edge. The
   interactive viewer gets an **Evacuation antennas** layer to show or hide
   them. The drawing works on a copy, because alphaDeesp derives the analysis
-  views from the colours. Nothing changes here: the tagging already stamps
-  the flag, and the current expertop4grid ignores it. The floor will be bumped
-  with the release.
+  views from the colours. Here, the tagging already stamps the flag.
+
+### Changed
+
+- **Dependency floor `expertop4grid>=0.3.4`** (was `>=0.3.3`;
+  `requirements.txt` pins `0.3.4`): the release whose renderer draws the
+  evacuation antennas. The README's stale `>=0.2.8` is updated too.
 
 ## [0.3.3.post3] - 2026-11-12
 

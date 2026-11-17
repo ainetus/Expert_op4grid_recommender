@@ -543,11 +543,11 @@ def test_reduced_drawing_keeps_the_evacuation_antennas():
     """Phase 3 contract with ExpertOp4Grid's renderer: the reduced view
     (``without_gray_edges``) keeps the branches tagged
     ``in_evacuation_antenna``, in their own colour with their report, while
-    a consumption antenna stays pruned. Skipped until the installed
-    expertop4grid ships the renderer (ainetus/ExpertOp4Grid#80)."""
+    a consumption antenna stays pruned. Needs expertop4grid >= 0.3.4 (the
+    floor); skipped on an older, stale install."""
     renderer = pytest.importorskip("alphaDeesp.core.graphs.overflow_renderer")
     if not hasattr(renderer.OverflowGraphRenderer, "prepare_for_plot"):
-        pytest.skip("this expertop4grid does not draw evacuation antennas yet")
+        pytest.skip("expertop4grid older than 0.3.4: no evacuation-antenna drawing")
     g_overflow = _tagged_overflow_graph()
 
     drawn = renderer.OverflowGraphRenderer.prepare_for_plot(g_overflow.g, without_gray_edges=True)

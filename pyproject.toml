@@ -41,7 +41,9 @@ dependencies = [
     # install it manually in a numpy<2 environment if you still need that path.
     # Floor bumped 0.2.8 -> 0.3.2 to match the tested family (requirements.txt
     # pins 0.3.2.post3) and resolve the pyproject/requirements disagreement (M4).
-    "expertop4grid>=0.3.3",
+    # 0.3.4: the overflow-graph renderer draws the evacuation antennas
+    # (OverflowGraphRenderer.prepare_for_plot, in_evacuation_antenna).
+    "expertop4grid>=0.3.4",
     "matplotlib>=3.8.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",

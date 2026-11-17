@@ -44,11 +44,11 @@ Design specs for the corrective action types the recommender proposes.
   lateral evacuation antennas hanging off the constrained path (one attachment
   point, or several when insensitive; ~zero report) as an overflow-graph
   structural element, then
-  as a recommendation lever. **Phases 0–2 and 4 implemented** (detection on
-  both sides, typing on the overflow graph, analysis payload, opt-in levers:
-  curtailment / lowering redispatch upstream, raising redispatch downstream).
-  Phase 3 (rendering in the reduced overflow graph + viewer layer) is done in
-  ExpertOp4Grid and awaits its release; phases 5–7 planned.
+  as a recommendation lever. **Phases 0–4 implemented** (detection on both
+  sides, typing on the overflow graph, analysis payload, rendering in the
+  reduced overflow graph + viewer layer via expertop4grid 0.3.4, opt-in levers:
+  curtailment / lowering redispatch upstream, raising redispatch downstream);
+  phases 5–7 planned.
 - [`recommender/load_shedding.md`](recommender/load_shedding.md) — load shedding
   (downstream consumption reduction) as a corrective action type.
 - [`recommender/renewable_curtailment.md`](recommender/renewable_curtailment.md) —

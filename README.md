@@ -678,7 +678,7 @@ This project relies on several external libraries, including:
   * `pypowsybl`
   * `grid2op` (Ensure you have a compatible version installed)
   * `alphaDeesp` (Ensure this library is installed in your environment)
-  * `expertop4grid>=0.2.8`
+  * `expertop4grid>=0.3.4`
 
 See `pyproject.toml` for the full list.
 

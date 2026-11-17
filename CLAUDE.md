@@ -463,8 +463,8 @@ tests/
 ├── test_structural_antennas.py          # Constrained-path antennas: detection, graph
 │                                        # typing, pipeline wiring + end-to-end
 │                                        # non-regression guard (evacuation_antennas.md);
-│                                        # reduced-drawing contract (skipped until the
-│                                        # expertop4grid release that ships it)
+│                                        # reduced-drawing contract with expertop4grid
+│                                        # >= 0.3.4 (skipped on an older install)
 ├── test_injections.py                   # Backend-agnostic injection helpers + the
 │                                        # alphaDeesp node shape (one value per flagged sub)
 ├── test_visualization_filtering.py      # Visualization filters
@@ -516,8 +516,9 @@ pytest tests/test_ActionClassifier.py::test_specific  # Single test
   dependency as of 0.3.0 — its `numpy==1.26.4` pin conflicts with `numpy>=2.0.0`;
   it is only needed by the legacy grid2op+pypowsybl assistant-env bridge, install
   it manually in a `numpy<2` env if required)
-- `expertop4grid >= 0.3.3` (contains alphaDeesp; pulls grid2op + lightsim2grid
-  transitively — so a base install is not grid2op-free at the wheel level)
+- `expertop4grid >= 0.3.4` (contains alphaDeesp; pulls grid2op + lightsim2grid
+  transitively — so a base install is not grid2op-free at the wheel level;
+  0.3.4 is the release whose renderer draws the evacuation antennas)
 - `matplotlib >= 3.8.0`, `pydantic >= 2.0`, `pydantic-settings >= 2.0`
 
 **Extras:**
@@ -725,7 +726,7 @@ See `docs/archive/MIGRATION_PLAN.md` for details. The goal is to remove `grid2op
 | Modify action scoring | `action_evaluation/discovery/` (per-family mixins); injection families share `_injection_base.py` |
 | Change graph analysis | `graph_analysis/builder.py`, `processor.py` |
 | Antenna (islanded-pocket) graph | `graph_analysis/antenna_graph.py`, `processor.py` (`extract_antenna_context`, `pre_process_antenna_graph`); see `docs/recommender/antenna_overflow_graph.md` |
-| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); levers in `discovery/_injection_base.py` (`_evacuation_antenna_reference`, `_evacuation_antenna_aggregates`); drawing in ExpertOp4Grid (`OverflowGraphRenderer.prepare_for_plot`, ainetus/ExpertOp4Grid#80); see `docs/recommender/evacuation_antennas.md` |
+| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); levers in `discovery/_injection_base.py` (`_evacuation_antenna_reference`, `_evacuation_antenna_aggregates`); drawing in ExpertOp4Grid ≥ 0.3.4 (`OverflowGraphRenderer.prepare_for_plot`, ainetus/ExpertOp4Grid#80); see `docs/recommender/evacuation_antennas.md` |
 | Overflow-graph node injections | `utils/injections.py` (`alphadeesp_node_injections`), used by `AlphaDeespAdapter._build_topo` and `antenna_graph._build_topo` |
 | pypowsybl migration | `pypowsybl_backend/*`, `environment_pypowsybl.py` |
 | Adjust rho calculation | `pypowsybl_backend/observation.py`, `overflow_analysis.py` |
