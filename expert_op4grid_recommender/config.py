@@ -99,8 +99,11 @@ class Settings(BaseSettings):
     # pipeline is AC. The overflow graph only needs the *delta flows* (a linear
     # flow-transfer estimate); AC is reserved for the per-action reassessment.
     # On a numerically stiff operating point one AC solve can cost ~10 s vs
-    # ~0.2 s in DC. The graph's rho is then derived from the DC active power
-    # (|P|/(√3·Vnom·Ilim)) instead of the (unpopulated) DC branch currents.
+    # ~0.2 s in DC. The N-1 state is solved in DC before and after the cut,
+    # and that DC transfer is applied on the AC base flows of the observation
+    # (comparing DC post-cut flows to AC base flows would put the AC/DC gap on
+    # every branch). The graph's rho is then derived from the post-cut active
+    # power (|P|/(√3·Vnom·Ilim)) instead of the (unpopulated) DC branch currents.
     # Opt-in (default off) to preserve the AC graph behaviour until validated
     # across all environments.
     USE_DC_FOR_OVERFLOW_GRAPH: bool = False

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The DC overflow graph (`USE_DC_FOR_OVERFLOW_GRAPH`) now measures a DC
+  flow transfer.** With the flag on, the graph compared DC post-cut flows
+  to the base flows of the AC N-1 observation, so every flow change also
+  carried the AC/DC gap: DC has no losses, so its distributed slack spreads
+  the AC losses over the generators. On full-France snapshots that gap
+  alone exceeded the 5 % gray threshold on about 1,250 of 8,400 branches.
+  The graph gained 1,100 to 1,250 spurious coloured edges, and on one case
+  its constrained path had 32 upstream nodes instead of 13.
+  `OverflowSimulator` now solves the N-1 state in DC before the cut and
+  applies the change of the DC flows across the cut on the AC base flows.
+  Radial branches carry no report, and the graph matches the AC one except
+  for edges near the threshold, for one more DC load flow (about 0.3 s on
+  France). `USE_DC_LOAD_FLOW` and the divergence fallback, whose
+  observation is already solved in DC, are unchanged.
+  `NetworkManager.get_line_p1_array(nan_as_zero=False)` returns NaN for a
+  branch without a computed flow.
+
 ## [0.3.3.post3] - 2026-11-12
 
 ### Fixed

@@ -278,6 +278,20 @@ So the **full retry tree from a fast / PREVIOUS_VALUES call** has up to
 
 In practice the warm-start case stops at (1) in a single AC call.
 
+### 3.8 The overflow graph in DC (`USE_DC_FOR_OVERFLOW_GRAPH`)
+
+The overflow graph only needs the flow change caused by cutting the
+overloaded lines. With `USE_DC_FOR_OVERFLOW_GRAPH` alone, the N-1 observation
+is solved in AC while the graph runs in DC, and the two cannot be compared
+directly. Their difference would carry the AC/DC gap on every branch: DC has
+no losses, so its distributed slack spreads the AC losses over the generators.
+`OverflowSimulator._solve_after_cut` therefore solves the N-1 state in DC
+before the cut and after it, and applies that DC transfer on the AC base
+flows: two DC solves instead of one AC solve. When the observation is itself
+solved in DC (`USE_DC_LOAD_FLOW`, or the divergence fallback, both of which
+set `NetworkManager._default_dc`), base and cut are already consistent and
+the cut is solved once.
+
 ## 4. `obs.simulate(action)` — the canonical action simulation
 
 Signature:

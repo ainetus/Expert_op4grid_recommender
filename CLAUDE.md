@@ -772,6 +772,12 @@ combined = action1 + action2
 3. **Path handling**: Use `Path` objects and `PROJECT_ROOT` from config, not relative string paths.
 
 4. **DC load flow fallback**: If AC simulation fails, the code automatically switches to DC. Results are marked as "more approximate".
+   With `USE_DC_FOR_OVERFLOW_GRAPH` alone, the observation stays AC while the
+   overflow graph runs in DC: `OverflowSimulator._solve_after_cut` solves the
+   N-1 state in DC before and after the cut and applies that DC transfer on the
+   AC base flows. Never compare DC post-cut flows to the AC observation
+   directly — the AC/DC gap (losses, slack distribution) would land on every
+   branch (`docs/architecture/simulation-pipeline.md` § 3.8).
 
 5. **alphaDeesp dependency**: `expertop4grid >= 0.2.8` is required for `AlphaDeesp_warmStart`.
 
