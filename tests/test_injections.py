@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from expert_op4grid_recommender.utils.injections import (
+    alphadeesp_node_injections,
     consumption_mw,
     gen_to_subid,
     injections_by_sub,
@@ -93,6 +94,50 @@ def test_unlocatable_elements_are_skipped():
     prod, load = injections_by_sub(obs)
     np.testing.assert_allclose(prod, [0.0, 0.0])
     np.testing.assert_allclose(load, [0.0, 0.0])
+
+
+def _as_read_by_build_nodes(nodes):
+    """``prod - load`` per substation, read the way alphaDeesp's
+    ``build_nodes`` does: the next value only for a flagged substation."""
+    prods, loads = iter(nodes["prods_values"]), iter(nodes["loads_values"])
+    values = [(next(prods) if is_prod else 0.0) - (next(loads) if is_load else 0.0)
+              for is_prod, is_load in zip(nodes["are_prods"], nodes["are_loads"])]
+    assert next(prods, None) is None and next(loads, None) is None  # nothing left over
+    return values
+
+
+@pytest.mark.parametrize("make_obs", [_grid2op_like_obs, _pypowsybl_like_obs])
+def test_alphadeesp_node_injections_give_one_value_per_flagged_substation(make_obs):
+    nodes = alphadeesp_node_injections(make_obs())
+    assert nodes == {
+        "are_prods": [True, False, True],
+        "are_loads": [False, True, True],
+        "prods_values": [100.0, 40.0],
+        "loads_values": [90.0, 50.0],
+    }
+    assert _as_read_by_build_nodes(nodes) == pytest.approx([100.0, -90.0, -10.0])
+
+
+def test_alphadeesp_node_injections_sum_units_and_keep_absorbing_ones():
+    """Units of a substation are summed; a substation holding only a pump is
+    still flagged, with a negative production."""
+    obs = types.SimpleNamespace(
+        name_sub=np.array(["S0", "S1", "S2"]),
+        gen_to_subid=np.array([0, 0, 2]), gen_p=np.array([100.0, 20.0, -30.0]),
+        load_to_subid=np.array([1]), load_p=np.array([90.0]),
+    )
+    nodes = alphadeesp_node_injections(obs)
+    assert nodes["are_prods"] == [True, False, True]
+    assert nodes["prods_values"] == pytest.approx([120.0, -30.0])
+    assert _as_read_by_build_nodes(nodes) == pytest.approx([120.0, -90.0, -30.0])
+
+
+def test_alphadeesp_node_injections_skip_unlocatable_elements():
+    obs = types.SimpleNamespace(name_sub=np.array(["S0", "S1"]),
+                                gen_p=np.array([10.0]), load_p=np.array([5.0]))
+    assert alphadeesp_node_injections(obs) == {
+        "are_prods": [False, False], "are_loads": [False, False],
+        "prods_values": [], "loads_values": []}
 
 
 def test_real_pypowsybl_observation_ieee14():

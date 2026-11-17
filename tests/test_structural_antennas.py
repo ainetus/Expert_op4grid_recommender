@@ -539,6 +539,31 @@ def test_tagging_changes_nothing_but_the_tags():
     assert _alphadeesp_views(Structured_Overload_Distribution_Graph(g_overflow.g)) == views_before
 
 
+def test_reduced_drawing_keeps_the_evacuation_antennas():
+    """Phase 3 contract with ExpertOp4Grid's renderer: the reduced view
+    (``without_gray_edges``) keeps the branches tagged
+    ``in_evacuation_antenna``, in their own colour with their report, while
+    a consumption antenna stays pruned. Skipped until the installed
+    expertop4grid ships the renderer (ainetus/ExpertOp4Grid#80)."""
+    renderer = pytest.importorskip("alphaDeesp.core.graphs.overflow_renderer")
+    if not hasattr(renderer.OverflowGraphRenderer, "prepare_for_plot"):
+        pytest.skip("this expertop4grid does not draw evacuation antennas yet")
+    g_overflow = _tagged_overflow_graph()
+
+    drawn = renderer.OverflowGraphRenderer.prepare_for_plot(g_overflow.g, without_gray_edges=True)
+
+    drawn_lines = {data["name"]: data for _, _, data in drawn.edges(data=True)}
+    evacuation = {"A1_E1", "A1_E1_b", "E1_E2", "E2_E3", "E3_E1", "A1_D1", "D1_O"}
+    assert evacuation <= set(drawn_lines)
+    assert {"E1", "E2", "E3", "D1"} <= set(drawn.nodes)
+    assert "A1_C1" not in drawn_lines and "C1" not in drawn.nodes
+    for name in evacuation:
+        assert drawn_lines[name]["color"] == renderer.EVACUATION_ANTENNA_COLOR
+    # The analysis graph keeps its colours and reports.
+    assert all(data["color"] == "gray" for _, _, data in g_overflow.g.edges(data=True)
+               if data.get("in_evacuation_antenna"))
+
+
 def test_tags_survive_relabelling_to_ids():
     """Discovery's pre-processing renumbers the nodes; the tags follow them."""
     g_overflow = _tagged_overflow_graph()

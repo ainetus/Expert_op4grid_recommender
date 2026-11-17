@@ -172,8 +172,10 @@ observation, no pypowsybl / real env):
 - **Graph correctness** — consumer pocket: constraint black, branches blue,
   oriented root→pocket, healthy grid gray; producer (exporting) pocket:
   branches oriented pocket→root, pocket classified **amont**.
-- **Helpers** — `_islanded_line_mask`, `_build_topo` (prod/load per sub, full
-  edge list), `_compute_delta_flow_frame` (collapse → `-init` on the pocket,
+- **Helpers** — `_islanded_line_mask`, `_build_topo` (flagged subs + one
+  prod/load value per flagged sub, the shape alphaDeesp's `build_nodes` reads,
+  via `alphadeesp_node_injections`; full edge list),
+  `_compute_delta_flow_frame` (collapse → `-init` on the pocket,
   zero elsewhere; gray threshold relative to the constraint report), full
   alphaDeesp column set on `df_of_g`.
 - **Robustness** — negative constraint `p_or` (branch-direction swap),

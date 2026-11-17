@@ -127,6 +127,7 @@ expert_op4grid_recommender/
 │   ├── antenna_graph.py       # Antenna (islanded-pocket) synthetic overflow graph
 │   ├── structural_antennas.py # Antennas hanging off the constrained path (evacuation
 │   │                          #   antennas): detection + typing as graph attributes
+│   │                          #   (ExpertOp4Grid's renderer draws in_evacuation_antenna)
 │   └── visualization.py       # Graph visualization (Graphviz/pydot)
 │
 ├── pypowsybl_backend/         # Pure pypowsybl implementation (no grid2op)
@@ -154,7 +155,8 @@ expert_op4grid_recommender/
     ├── helpers.py             # Timer, sorting, test data saving
     ├── helpers_pypowsybl.py   # pypowsybl-specific helpers
     ├── injections.py          # Backend-agnostic injections per substation (production
-    │                          #   counted positive; pypowsybl uses the receptor convention)
+    │                          #   counted positive; pypowsybl uses the receptor convention);
+    │                          #   alphadeesp_node_injections = the overflow-graph node shape
     ├── action_rebuilder.py    # Rebuild actions from REPAS format
     ├── conversion_actions_repas.py  # REPAS action conversion
     ├── superposition.py       # Superposition theorem for impact estimation
@@ -460,8 +462,11 @@ tests/
 │                                        # (see docs/recommender/antenna_overflow_graph.md)
 ├── test_structural_antennas.py          # Constrained-path antennas: detection, graph
 │                                        # typing, pipeline wiring + end-to-end
-│                                        # non-regression guard (evacuation_antennas.md)
-├── test_injections.py                   # Backend-agnostic injection helpers
+│                                        # non-regression guard (evacuation_antennas.md);
+│                                        # reduced-drawing contract (skipped until the
+│                                        # expertop4grid release that ships it)
+├── test_injections.py                   # Backend-agnostic injection helpers + the
+│                                        # alphaDeesp node shape (one value per flagged sub)
 ├── test_visualization_filtering.py      # Visualization filters
 ├── test_typed_pipeline_spine.py         # R1/R2 contracts: AnalysisContext/Result +
 │                                        # SimulatedAction dict-compat, SimulationBackend
@@ -720,7 +725,8 @@ See `docs/archive/MIGRATION_PLAN.md` for details. The goal is to remove `grid2op
 | Modify action scoring | `action_evaluation/discovery/` (per-family mixins); injection families share `_injection_base.py` |
 | Change graph analysis | `graph_analysis/builder.py`, `processor.py` |
 | Antenna (islanded-pocket) graph | `graph_analysis/antenna_graph.py`, `processor.py` (`extract_antenna_context`, `pre_process_antenna_graph`); see `docs/recommender/antenna_overflow_graph.md` |
-| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); levers in `discovery/_injection_base.py` (`_evacuation_antenna_reference`, `_evacuation_antenna_aggregates`); see `docs/recommender/evacuation_antennas.md` |
+| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); levers in `discovery/_injection_base.py` (`_evacuation_antenna_reference`, `_evacuation_antenna_aggregates`); drawing in ExpertOp4Grid (`OverflowGraphRenderer.prepare_for_plot`, ainetus/ExpertOp4Grid#80); see `docs/recommender/evacuation_antennas.md` |
+| Overflow-graph node injections | `utils/injections.py` (`alphadeesp_node_injections`), used by `AlphaDeespAdapter._build_topo` and `antenna_graph._build_topo` |
 | pypowsybl migration | `pypowsybl_backend/*`, `environment_pypowsybl.py` |
 | Adjust rho calculation | `pypowsybl_backend/observation.py`, `overflow_analysis.py` |
 | Configure monitoring | `config.py` (`LINES_MONITORING_FILE`, `IGNORE_LINES_MONITORING`) |
