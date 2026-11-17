@@ -2658,7 +2658,18 @@ def evacuation_levers_on(monkeypatch):
     monkeypatch.setattr(config, "EVACUATION_ANTENNA_LEVERS", True)
 
 
-def test_evacuation_levers_off_leave_the_generator_families_unchanged():
+@pytest.fixture
+def evacuation_levers_off(monkeypatch):
+    from expert_op4grid_recommender import config
+    monkeypatch.setattr(config, "EVACUATION_ANTENNA_LEVERS", False)
+
+
+def test_evacuation_levers_are_on_by_default():
+    from expert_op4grid_recommender.config import Settings
+    assert Settings.model_fields["EVACUATION_ANTENNA_LEVERS"].default is True
+
+
+def test_evacuation_levers_off_leave_the_generator_families_unchanged(evacuation_levers_off):
     with_antennas = _run_generator_families(_evacuation_discoverer([_evacuation_antenna()]))
     without = _run_generator_families(_evacuation_discoverer([]))
     for family in ("renewable_curtailment", "redispatch"):
@@ -2819,7 +2830,7 @@ def _downstream_evacuation_discoverer(antennas, gen_pmax=(80.0, 150.0, 30.0, 60.
     )
 
 
-def test_downstream_levers_off_leave_the_generator_families_unchanged():
+def test_downstream_levers_off_leave_the_generator_families_unchanged(evacuation_levers_off):
     with_antenna = _run_generator_families(
         _downstream_evacuation_discoverer([_downstream_evacuation_antenna()]))
     without = _run_generator_families(_downstream_evacuation_discoverer([]))
