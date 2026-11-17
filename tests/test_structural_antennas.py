@@ -17,6 +17,7 @@ See ``docs/recommender/evacuation_antennas.md``.
 
 import copy
 import json
+import sys
 import types
 from unittest.mock import MagicMock
 
@@ -55,7 +56,8 @@ from expert_op4grid_recommender.pipeline import (
 #
 # E1-E2-E3: evacuation antenna (wind + solar), meshed inside, double feeder
 #           to A1; C1: upstream consumption antenna; W1: downstream one;
-#           D1: insensitive pocket tied to TWO amont nodes (not an antenna).
+#           D1: insensitive pocket tied to TWO amont nodes (an antenna with two
+#           attachments).
 SUBS = ["A0", "A1", "O", "X", "V1", "R1", "R2", "E1", "E2", "E3", "C1", "D1", "W1"]
 SUB = {name: i for i, name in enumerate(SUBS)}
 # (name, origin, extremity, reactance)
@@ -217,15 +219,36 @@ def test_upstream_consumption_antenna_is_typed_as_counter_lever():
     assert cons.loads == ["LD_C1"]
 
 
-def test_insensitive_pocket_tied_to_two_amont_nodes_is_not_an_antenna():
-    """D1 is gray (report below the threshold) yet meshed with the constrained
-    path on two nodes: the topological criterion, not the report, rules it out."""
+def test_insensitive_pocket_tied_to_two_amont_nodes_is_an_antenna():
+    """D1 is meshed with the constrained path on two nodes, A1 and O, yet gray
+    (report below the threshold): an antenna with two attachment nodes, listed
+    by decreasing power exchanged (D1 sends more of its 30 MW to O)."""
     obs = _make_obs()
     g_overflow, sdg = _overflow_graph(obs)
     colors = _colors(g_overflow)
     assert colors["A1_D1"] == "gray" and colors["D1_O"] == "gray"
 
-    antennas = detect_structural_antennas(g_overflow, sdg, obs)
+    evac = _by_id(detect_structural_antennas(g_overflow, sdg, obs))["EVAC_O_1"]
+    assert evac.antenna_type == "evacuation"
+    assert evac.nodes == ["D1"]
+    assert evac.attachment_node == "O"
+    assert evac.attachment_nodes == ["O", "A1"]
+    assert evac.attachment_sub_ids == [SUB["O"], SUB["A1"]]
+    assert evac.attachment_sub_names == ["O", "A1"]
+    assert evac.connection_lines == ["A1_D1", "D1_O"]
+    assert evac.export_mw == pytest.approx(30.0)
+    assert evac.dispatchable_gens == ["G_D1"]
+    assert 0 < evac.report_ratio_max < 0.05  # no longer exactly 0 with two attachments
+    assert evac.is_insensitive
+
+
+def test_sensitive_component_tied_to_several_nodes_is_not_an_antenna():
+    """With two attachment nodes the report is no longer 0 by construction, so
+    insensitivity becomes the criterion: above the threshold D1 is rejected,
+    while the single-attachment antennas stay."""
+    obs = _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    antennas = detect_structural_antennas(g_overflow, sdg, obs, report_threshold=0.005)
     assert all("D1" not in a.nodes for a in antennas)
     assert sorted(a.antenna_id for a in antennas) == ["CONS_UP_A1_1", "EVAC_A1_1"]
 
@@ -234,7 +257,7 @@ def test_antennas_sorted_by_export_magnitude():
     obs = _make_obs()
     g_overflow, sdg = _overflow_graph(obs)
     antennas = detect_structural_antennas(g_overflow, sdg, obs)
-    assert [a.antenna_id for a in antennas] == ["EVAC_A1_1", "CONS_UP_A1_1"]
+    assert [a.antenna_id for a in antennas] == ["EVAC_A1_1", "CONS_UP_A1_1", "EVAC_O_1"]
 
 
 def test_downstream_side_on_request():
@@ -249,6 +272,27 @@ def test_downstream_side_on_request():
     assert cons.attachment_node == "V1"
     assert cons.export_mw == pytest.approx(-50.0)
     assert antennas[-1] is cons  # amont first
+
+
+def test_downstream_evacuation_antenna(monkeypatch):
+    """W1 turned into a net producer (80 MW for its 50 MW load): an antenna
+    exporting into the downstream side is a downstream evacuation antenna."""
+    monkeypatch.setattr(sys.modules[__name__], "GENS",
+                        GENS + [("G_W1", "W1", 80.0, "THERMAL")])
+    obs = _make_obs()
+    g_overflow, sdg = _overflow_graph(obs)
+    antennas = detect_structural_antennas(g_overflow, sdg, obs, sides=("amont", "aval"))
+    evac = _by_id(antennas)["EVAC_DOWN_V1_1"]
+    assert evac.antenna_type == "evacuation_downstream"
+    assert evac.side == "aval"
+    assert evac.attachment_node == "V1"
+    assert evac.export_mw == pytest.approx(30.0)
+    assert evac.dispatchable_gens == ["G_W1"]
+    assert evac.is_insensitive
+
+    tag_structural_antennas(g_overflow, antennas)
+    assert g_overflow.g.nodes["W1"]["in_evacuation_antenna"] is True
+    assert g_overflow.g.nodes["V1"]["is_antenna_attachment"] is True
 
 
 def test_open_line_does_not_mesh_the_antenna():
@@ -270,9 +314,10 @@ def test_closed_line_meshes_the_antenna_with_the_grid():
 def test_size_cap_rejects_large_components():
     obs = _make_obs()
     g_overflow, sdg = _overflow_graph(obs)
-    # 13 nodes: a 2 / 13 cap keeps the 1-node C1 antenna, drops the 3-node one.
+    # 13 nodes: a 2 / 13 cap keeps the 1-node C1 and D1 antennas, drops the
+    # 3-node one.
     antennas = detect_structural_antennas(g_overflow, sdg, obs, max_fraction=2 / 13)
-    assert [a.antenna_id for a in antennas] == ["CONS_UP_A1_1"]
+    assert [a.antenna_id for a in antennas] == ["CONS_UP_A1_1", "EVAC_O_1"]
 
 
 @pytest.mark.parametrize("min_mw, expected", [
@@ -378,6 +423,34 @@ def test_real_pypowsybl_ieee14_evacuation_antenna():
     assert evac.is_insensitive
 
 
+def test_real_pypowsybl_ieee14_downstream_evacuation_antenna():
+    """The same bus 8 seen from the other side: with T4-7 (4 -> 7) as the
+    overload, bus 7 is downstream and bus 8 a downstream evacuation antenna."""
+    pp = pytest.importorskip("pypowsybl")
+    from expert_op4grid_recommender.pypowsybl_backend import SimulationEnvironment
+    from expert_op4grid_recommender.pypowsybl_backend.overflow_analysis import (
+        build_overflow_graph_pypowsybl,
+    )
+
+    network = pp.network.create_ieee14()
+    network.update_generators(id="B8-G", target_p=10.0)
+    env = SimulationEnvironment(network=network)
+    obs = env.get_obs()
+    cut = list(obs.name_line).index("T4-7-1")
+    _, _, g_overflow, _, sdg, _ = build_overflow_graph_pypowsybl(
+        env, obs, [cut], [], [], 0, do_consolidate_graph=False)
+
+    antennas = detect_structural_antennas(g_overflow, sdg, obs, sides=("amont", "aval"))
+    evac = _by_id(antennas)["EVAC_DOWN_VL7_1"]
+    b8_output = -float(obs.gen_p[list(obs.name_gen).index("B8-G")])  # after slack sharing
+    assert evac.antenna_type == "evacuation_downstream"
+    assert evac.nodes == ["VL8"]
+    assert evac.connection_lines == ["L7-8-1"]
+    assert evac.export_mw == pytest.approx(b8_output, abs=0.1)
+    assert evac.dispatchable_gens == ["B8-G"]
+    assert evac.is_insensitive
+
+
 def test_detection_leaves_graphs_untouched():
     obs = _make_obs()
     g_overflow, sdg = _overflow_graph(obs)
@@ -395,9 +468,10 @@ def test_to_dict_is_a_plain_payload():
     assert payload["antenna_id"] == "EVAC_A1_1"
     assert payload["antenna_type"] == "evacuation"
     assert payload["connection_lines"] == ["A1_E1", "A1_E1_b"]
+    assert payload["attachment_sub_names"] == ["A1"]
     # numpy labels are normalised to plain Python values
     assert type(payload["attachment_node"]) is str
-    assert all(type(n) is str for n in payload["nodes"])
+    assert all(type(n) is str for n in payload["nodes"] + payload["attachment_nodes"])
     json.dumps(payload)
 
 
@@ -430,16 +504,19 @@ def test_tagging_types_antenna_nodes_and_branches():
         assert nodes[sub]["in_evacuation_antenna"] is True
     assert nodes["C1"]["antenna_id"] == "CONS_UP_A1_1"
     assert nodes["C1"]["in_evacuation_antenna"] is False
+    assert nodes["D1"]["antenna_id"] == "EVAC_O_1"
     assert nodes["A1"]["is_antenna_attachment"] is True
+    assert nodes["O"]["is_antenna_attachment"] is True  # D1's other attachment
     assert "antenna_id" not in nodes["A1"]
 
     tagged = {data["name"]: data["antenna_id"] for _, _, data in g_overflow.g.edges(data=True)
               if "antenna_id" in data}
     assert tagged == {"A1_E1": "EVAC_A1_1", "A1_E1_b": "EVAC_A1_1", "E1_E2": "EVAC_A1_1",
-                      "E2_E3": "EVAC_A1_1", "E3_E1": "EVAC_A1_1", "A1_C1": "CONS_UP_A1_1"}
-    # Only antenna nodes and attachment points carry a tag (D1 is gray, not an antenna).
+                      "E2_E3": "EVAC_A1_1", "E3_E1": "EVAC_A1_1", "A1_C1": "CONS_UP_A1_1",
+                      "A1_D1": "EVAC_O_1", "D1_O": "EVAC_O_1"}
+    # Only antenna nodes and attachment points carry a tag.
     assert {n for n, d in g_overflow.g.nodes(data=True) if any(k in d for k in _TAG_KEYS)} \
-        == {"A1", "C1", "E1", "E2", "E3"}
+        == {"A1", "C1", "D1", "E1", "E2", "E3", "O"}
 
 
 def test_tagging_changes_nothing_but_the_tags():
@@ -512,9 +589,12 @@ def _step2_context(obs=None):
 
 
 def test_step2_graph_detects_and_tags_the_antennas():
+    """Both sides of the constrained path are scanned."""
     context = run_analysis_step2_graph(_step2_context())
-    assert [a.antenna_id for a in context.structural_antennas] == ["EVAC_A1_1", "CONS_UP_A1_1"]
+    assert [a.antenna_id for a in context.structural_antennas] == [
+        "EVAC_A1_1", "CONS_UP_A1_1", "EVAC_O_1", "CONS_V1_1"]
     assert context.g_overflow.g.nodes["E2"]["antenna_id"] == "EVAC_A1_1"
+    assert context.g_overflow.g.nodes["W1"]["antenna_id"] == "CONS_V1_1"
 
 
 def test_step2_graph_detection_can_be_disabled(monkeypatch):
@@ -578,7 +658,8 @@ def test_discovery_hands_the_antennas_to_the_model_and_the_result(monkeypatch):
     result = run_analysis_step2_discovery(context, recommender=spy)
 
     assert spy.inputs.structural_antennas is context.structural_antennas
-    assert [a["antenna_id"] for a in result["structural_antennas"]] == ["EVAC_A1_1", "CONS_UP_A1_1"]
+    assert [a["antenna_id"] for a in result["structural_antennas"]] == [
+        "EVAC_A1_1", "CONS_UP_A1_1", "EVAC_O_1", "CONS_V1_1"]
     assert result.structural_antennas[0]["export_mw"] == pytest.approx(145.0)
     json.dumps(result.structural_antennas)
 
@@ -613,3 +694,95 @@ def test_structural_antennas_leave_the_recommendations_unchanged():
     assert set(on.prioritized_actions) == set(off.prioritized_actions)
     assert any(family["scores"] for family in on.action_scores.values())  # not vacuous
     assert on.action_scores == off.action_scores
+
+
+@pytest.mark.slow
+def test_evacuation_levers_end_to_end():
+    """Phase 4 with ``EVACUATION_ANTENNA_LEVERS`` on, on the small test grid:
+    the nuclear units of its two evacuation antennas become redispatch levers
+    — unit candidates referenced on the attachment node, plus one MW-sized
+    aggregate per antenna — and the aggregates (multi-generator ``set_gen_p``)
+    go through the reassessment and the superposition pairs."""
+    pytest.importorskip("pypowsybl")
+    from expert_op4grid_recommender.backends import Backend
+
+    saved = config.get_settings()
+    try:
+        config.override_settings(
+            ENV_NAME="bare_env_small_grid_test",
+            FILE_ACTION_SPACE_DESC="reduced_model_actions_test_pypowsybl.json",
+            EVACUATION_ANTENNA_LEVERS=True,
+            MIN_REDISPATCH=6,  # push every redispatch candidate into the reassessment
+        )
+        result = pipeline.run_analysis(
+            analysis_date=None, current_timestep=0,
+            current_lines_defaut=["P.SAOL31RONCI"], backend=Backend.PYPOWSYBL,
+        )
+    finally:
+        config.override_settings(saved)
+
+    params = result.action_scores["redispatch"]["params"]
+    bugey = params["redispatch_EVAC_SSV.OP7_1"]
+    assert bugey["influence_ref_substation"] == "SSV.OP7"
+    assert bugey["gen_names"] == ["BUGEY7G2", "BUGEY7G4"]
+    assert params["redispatch_BUGEY7G2"]["evacuation_antenna_id"] == "EVAC_SSV.OP7_1"
+    for action_id in ("redispatch_EVAC_SSV.OP7_1", "redispatch_EVAC_VIELMP7_1"):
+        assert action_id in result.prioritized_actions
+        assert result.prioritized_actions[action_id].get("non_convergence") is None
+    assert any("EVAC_" in pair for pair in result.combined_actions)
+
+
+def test_downstream_evacuation_lever_end_to_end():
+    """The downstream lever end to end on a real pypowsybl network (IEEE 14,
+    AC). Tripping T4-9 overloads T4-7 (4 -> 7), so bus 8, hanging off bus 7,
+    is a downstream evacuation antenna. (Bus 3, a load tied to buses 2 and 4
+    upstream, is an insensitive consumption antenna with two attachments.) With
+    the levers on, the pipeline raises the unit B8-G: a unit candidate, plus an
+    aggregate moved from its 10 MW setpoint rather than from the ~6.5 MW it
+    produces after the slack sharing. The reassessment confirms that both
+    relieve the overload."""
+    pp = pytest.importorskip("pypowsybl")
+    from expert_op4grid_recommender.backends import Backend
+    from expert_op4grid_recommender.pypowsybl_backend import SimulationEnvironment
+
+    network = pp.network.create_ieee14()
+    network.update_generators(id="B8-G", target_p=10.0)
+    env = SimulationEnvironment(network=network)
+    limits = np.full(len(env.name_line), 9999.0)
+    limits[list(env.name_line).index("T4-7-1")] = 135.0  # A: rho 0.80 in N, 1.09 in N-1
+    env.set_thermal_limit(limits)
+    prebuilt = {"env": env, "path_chronic": "", "chronic_name": "ieee14",
+                "custom_layout": None, "lines_non_reconnectable": [],
+                "lines_we_care_about": list(env.name_line)}
+
+    saved = config.get_settings()
+    try:
+        config.override_settings(EVACUATION_ANTENNA_LEVERS=True,
+                                 ALLOWED_ACTION_TYPES=["redispatch"], MIN_REDISPATCH=4)
+        context = pipeline.run_analysis_step1(
+            analysis_date=None, current_timestep=0, current_lines_defaut=["T4-9-1"],
+            backend=Backend.PYPOWSYBL, dict_action={}, prebuilt_env_context=prebuilt)
+        result = run_analysis_step2_discovery(run_analysis_step2_graph(context))
+    finally:
+        config.override_settings(saved)
+
+    assert [(a["antenna_id"], a["antenna_type"], a["attachment_sub_names"])
+            for a in result.structural_antennas] == [
+        ("CONS_UP_VL2_1", "consumption_upstream", ["VL2", "VL4"]),
+        ("EVAC_DOWN_VL7_1", "evacuation_downstream", ["VL7"]),
+    ]
+    params = result.action_scores["redispatch"]["params"]
+    unit = params["redispatch_B8-G"]
+    assert unit["direction"] == "up"
+    assert unit["influence_ref_substation"] == "VL7"
+    assert unit["evacuation_antenna_id"] == "EVAC_DOWN_VL7_1"
+    aggregate = params["redispatch_EVAC_DOWN_VL7_1"]
+    assert aggregate["direction"] == "up"
+    assert aggregate["gen_names"] == ["B8-G"]
+    assert aggregate["gen_p"] < 9.0  # what B8-G produces after the slack sharing
+    assert aggregate["target_p_MW"]["B8-G"] == pytest.approx(
+        10.0 + aggregate["applied_MW"], abs=0.01)
+    for action_id in ("redispatch_B8-G", "redispatch_EVAC_DOWN_VL7_1"):
+        action = result.prioritized_actions[action_id]
+        assert action["is_rho_reduction"]
+        assert action["max_rho"] < float(np.max(action["rho_before"]))

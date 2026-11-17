@@ -10,24 +10,29 @@
 """Antennas hanging off the constrained path of the overflow graph.
 
 An *antenna* is a part of the grid tied to the rest of the network through a
-single node of the constrained path. On the upstream (amont) side, an antenna
-that exports power is an **evacuation antenna**: all its net production leaves
-through that attachment node and then runs down the constrained path into the
-overload. It is therefore a lever (reduce its production) even though its own
-branches are gray in the overflow graph.
+single node of the constrained path, or through several nodes of one side of it
+when it is insensitive to the overload. An antenna that exports power is an
+**evacuation antenna**: all its net production leaves through that attachment
+node. Upstream (amont), it then runs down the constrained path into the
+overload, so lowering it relieves the constraint. Downstream (aval), it feeds
+the area the constraint supplies, so raising it relieves the constraint (and
+curtailing it would aggravate it). Either way it is a lever, even though its
+own branches are gray in the overflow graph.
 
 Detection is topological, on the overflow graph restricted to the branches in
 service in the N-1 state: remove the constrained-path nodes of one side; every
 remaining connected component that touches neither the other side nor an
-overloaded line, and is adjacent to exactly one removed node, is an antenna of
-that side.
+overloaded line, and is adjacent to at least one removed node (its attachment
+nodes), is an antenna of that side.
 
-The near-zero report is a consequence, not the criterion. In DC, cutting the
-overloaded line only moves injections at its two ends, both outside the
-antenna; with a single attachment node every antenna node follows that node's
-angle, so the report on every antenna branch is exactly 0, even for an
+With a single attachment node, the near-zero report is a consequence, not the
+criterion. In DC, cutting the overloaded line only moves injections at its two
+ends, both outside the antenna; every antenna node follows the attachment
+node's angle, so the report on every antenna branch is exactly 0, even for an
 internally meshed antenna. AC leaves a residual (losses, distributed slack),
-reported as ``report_ratio_max`` / ``is_insensitive``.
+reported as ``report_ratio_max`` / ``is_insensitive``. A component tied to
+several nodes of the path carries the angle difference between them, so there
+insensitivity becomes the criterion: it must stay below the gray threshold.
 
 ``tag_structural_antennas`` then types the detected antennas on the overflow
 graph itself, as node / edge attributes.
@@ -35,7 +40,7 @@ graph itself, as node / edge attributes.
 See ``docs/recommender/evacuation_antennas.md``.
 """
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import networkx as nx
@@ -59,24 +64,30 @@ _ANTENNA_TYPES = {
     (AMONT, True): "evacuation",
     (AMONT, False): "consumption_upstream",
     (AVAL, False): "consumption",
-    (AVAL, True): "production_downstream",
+    (AVAL, True): "evacuation_downstream",
 }
 _ID_PREFIXES = {
     "evacuation": "EVAC",
     "consumption_upstream": "CONS_UP",
     "consumption": "CONS",
-    "production_downstream": "PROD_DOWN",
+    "evacuation_downstream": "EVAC_DOWN",
 }
+# The antenna types that evacuate production, upstream or downstream.
+EVACUATION_TYPES = frozenset({"evacuation", "evacuation_downstream"})
 
 
 @dataclass
 class StructuralAntenna:
-    """A sub-network tied to the constrained path through a single node.
+    """A sub-network tied to the constrained path through a single node, or
+    through several nodes of one side when insensitive.
 
     ``export_mw`` is the active power leaving the antenna towards its
-    attachment node (positive: the antenna feeds the constrained path).
-    ``nodes`` are overflow-graph labels; ``sub_ids`` / ``sub_names`` the
-    substations they map to.
+    attachment nodes (positive: the antenna feeds the constrained path).
+    ``attachment_nodes`` lists them by decreasing power exchanged with the
+    antenna; ``attachment_node`` (and its substation) is the first one. Only
+    attachment nodes that map to a substation appear in
+    ``attachment_sub_ids``. ``nodes`` are overflow-graph labels; ``sub_ids`` /
+    ``sub_names`` the substations they map to.
     """
 
     antenna_id: str
@@ -98,6 +109,18 @@ class StructuralAntenna:
     loads: List[str]
     report_ratio_max: float
     is_insensitive: bool
+    attachment_nodes: List[Any] = field(default_factory=list)
+    attachment_sub_ids: List[int] = field(default_factory=list)
+    attachment_sub_names: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        # A single attachment given through the scalar fields only.
+        if not self.attachment_nodes:
+            self.attachment_nodes = [self.attachment_node]
+        if not self.attachment_sub_ids and self.attachment_sub_id is not None:
+            self.attachment_sub_ids = [self.attachment_sub_id]
+        if not self.attachment_sub_names:
+            self.attachment_sub_names = [self.attachment_sub_name]
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -140,7 +163,9 @@ def detect_structural_antennas(
 ) -> List[StructuralAntenna]:
     """Detect the antennas hanging off the constrained path.
 
-    Pure function: neither graph is modified.
+    A component tied to several nodes of the path is kept only when it is
+    insensitive (``report_ratio_max`` below ``report_threshold``). Pure
+    function: neither graph is modified.
 
     Args:
         g_overflow: ``OverFlowGraph`` (or its networkx graph). Node labels may be
@@ -159,14 +184,15 @@ def detect_structural_antennas(
             nodes is not an antenna (guard against a whole region hanging off a
             single node).
         report_threshold: insensitivity threshold on
-            ``|report| / |report of the overload|``; defaults to the gray-edge
+            ``|report| / |report of the overload|`` (a criterion for a
+            component tied to several nodes); defaults to the gray-edge
             threshold ``ThresholdReportOfLine``.
         renewable_sources: energy sources counted as renewable; defaults to
             ``config.RENEWABLE_ENERGY_SOURCES``.
 
     Returns:
         list[StructuralAntenna]: sorted by side, then decreasing |export|.
-        Ids are ``<TYPE PREFIX>_<attachment substation>_<k>``.
+        Ids are ``<TYPE PREFIX>_<first attachment substation>_<k>``.
     """
     g = getattr(g_overflow, "g", g_overflow)
     if report_threshold is None:
@@ -260,7 +286,7 @@ def detect_structural_antennas(
     p_ex_raw = getattr(obs, "p_ex", None)
     p_ex = np.nan_to_num(np.asarray(p_ex_raw, dtype=float)) if p_ex_raw is not None else -p_or
 
-    def describe(component, attachment, side):
+    def describe(component, attachments, side):
         conn_lines, internal_lines = set(), set()
         max_report = 0.0
         for k in {k for node in component for k in incident.get(node, ())}:
@@ -270,22 +296,31 @@ def detect_structural_antennas(
                 continue
             if u in component and v in component:
                 internal_lines.add(name)
-            else:  # the other end is the attachment node (single neighbour)
+            else:  # the other end is an attachment node (the only neighbours)
                 conn_lines.add(name)
 
-        # Power leaving the antenna, read at the antenna-side terminal.
+        # Power leaving the antenna, read at the antenna-side terminal, and
+        # the power exchanged with each attachment node.
         export = 0.0
+        exchanged = dict.fromkeys(attachments, 0.0)
         for name in conn_lines:
             i = line_idx.get(str(name))
             if i is None:
                 continue
             or_label, ex_label = label_of_sub.get(or_sub[i]), label_of_sub.get(ex_sub[i])
-            if or_label in component or ex_label == attachment:
-                export += p_or[i]
-            elif ex_label in component or or_label == attachment:
-                export += p_ex[i]
+            if or_label in component or ex_label in attachments:
+                flow, attachment = p_or[i], ex_label
+            elif ex_label in component or or_label in attachments:
+                flow, attachment = p_ex[i], or_label
+            else:
+                continue
+            export += flow
+            if attachment in exchanged:
+                exchanged[attachment] += abs(flow)
         if abs(export) <= min_mw:
             return None
+        attachments = sorted(attachments, key=lambda a: (-exchanged[a], str(a)))
+        attachment = attachments[0]
 
         sub_ids = sorted(sub_of_label[n] for n in component if n in sub_of_label)
         gen_ids = [gid for s in sub_ids for gid in gens_by_sub.get(s, ())]
@@ -296,14 +331,17 @@ def detect_structural_antennas(
             ratio = 0.0 if max_report == 0 else float("inf")
         attachment_sub = sub_of_label.get(attachment)
         antenna_type = _ANTENNA_TYPES[(side, export > 0)]
+
+        def sub_name_of(label):
+            return name_sub[sub_of_label[label]] if label in sub_of_label else str(label)
+
         return StructuralAntenna(
             antenna_id="",  # assigned once sorted
             antenna_type=antenna_type,
             side=side,
             attachment_node=_plain(attachment),
             attachment_sub_id=attachment_sub,
-            attachment_sub_name=(name_sub[attachment_sub] if attachment_sub is not None
-                                 else str(attachment)),
+            attachment_sub_name=sub_name_of(attachment),
             nodes=sorted((_plain(n) for n in component), key=str),
             sub_ids=sub_ids,
             sub_names=[name_sub[s] for s in sub_ids],
@@ -319,6 +357,9 @@ def detect_structural_antennas(
             loads=[name_load[lid] for lid in load_ids if cons[lid] > 0],
             report_ratio_max=round(float(ratio), 4),
             is_insensitive=bool(ratio < report_threshold),
+            attachment_nodes=[_plain(a) for a in attachments],
+            attachment_sub_ids=[sub_of_label[a] for a in attachments if a in sub_of_label],
+            attachment_sub_names=[sub_name_of(a) for a in attachments],
         )
 
     n_nodes = connectivity.number_of_nodes()
@@ -332,15 +373,21 @@ def detect_structural_antennas(
                 continue  # the rest of the grid
             attachments = {nb for node in component for nb in connectivity[node]
                            if nb in removed}
-            if len(attachments) != 1:
-                continue  # already islanded (0) or meshed with the path (> 1)
+            if not attachments:
+                continue  # already islanded
             if len(component) > max_fraction * n_nodes:
                 logger.debug("Component of %d nodes hanging off %s exceeds the "
                              "antenna size cap", len(component), attachments)
                 continue
-            antenna = describe(component, attachments.pop(), side)
-            if antenna is not None:
-                antennas.append(antenna)
+            antenna = describe(component, attachments, side)
+            if antenna is None:
+                continue
+            if len(attachments) > 1 and not antenna.is_insensitive:
+                logger.debug("Component tied to %s carries report (%.1f%% of the "
+                             "overload's): not an antenna", sorted(map(str, attachments)),
+                             100 * antenna.report_ratio_max)
+                continue
+            antennas.append(antenna)
 
     side_rank = {side: rank for rank, side in enumerate(sides)}
     antennas.sort(key=lambda a: (side_rank[a.side], -abs(a.export_mw),
@@ -357,8 +404,9 @@ def tag_structural_antennas(g_overflow: Any, antennas: Sequence[StructuralAntenn
     """Type the antennas on the overflow graph, in place.
 
     Antenna nodes and branches (connection and internal lines) get
-    ``antenna_id``, ``antenna_type`` and ``in_evacuation_antenna``; attachment
-    nodes get ``is_antenna_attachment``. Elements outside any antenna are left
+    ``antenna_id``, ``antenna_type`` and ``in_evacuation_antenna`` (upstream or
+    downstream evacuation antenna); attachment nodes (all of them) get
+    ``is_antenna_attachment``. Elements outside any antenna are left
     untouched, so an absent attribute means "no". The attributes survive the
     re-labelling of ``pre_process_graph_alphadeesp``; colours, reports and
     labels are not modified.
@@ -374,13 +422,14 @@ def tag_structural_antennas(g_overflow: Any, antennas: Sequence[StructuralAntenn
         tags = {
             "antenna_id": antenna.antenna_id,
             "antenna_type": antenna.antenna_type,
-            "in_evacuation_antenna": antenna.antenna_type == "evacuation",
+            "in_evacuation_antenna": antenna.antenna_type in EVACUATION_TYPES,
         }
         for node in antenna.nodes:
             if node in g:
                 g.nodes[node].update(tags)
-        if antenna.attachment_node in g:
-            g.nodes[antenna.attachment_node]["is_antenna_attachment"] = True
+        for attachment in antenna.attachment_nodes:
+            if attachment in g:
+                g.nodes[attachment]["is_antenna_attachment"] = True
         for line in antenna.connection_lines + antenna.internal_lines:
             tags_of_line[line] = tags
     if not tags_of_line:

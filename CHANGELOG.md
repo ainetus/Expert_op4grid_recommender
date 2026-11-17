@@ -26,12 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/recommender/evacuation_antennas.md`). `detect_structural_antennas`
   removes one side of the constrained path from the overflow graph (branches in
   service in N-1 only) and keeps the components tied to it through a single
-  node: upstream exporters are typed **evacuation antennas**. Their branches
-  are gray (zero report in DC), so today they are invisible to the structured
-  graph and to the injection levers.
+  node, or through several when they are insensitive (report below the gray
+  threshold): exporters are typed **evacuation antennas**, upstream (`evacuation`)
+  or downstream (`evacuation_downstream`). Their branches are gray (zero
+  report in DC), so today they are invisible to the structured graph and to
+  the injection levers.
 - **Structural antennas in the analysis (phase 2).** `run_analysis_step2_graph`
-  runs the detection on the freshly built overflow graph (not in the
-  islanded-pocket case), tags the antennas on it (`antenna_id`,
+  runs the detection on both sides of the constrained path of the freshly
+  built overflow graph (not in the islanded-pocket case), tags the antennas on
+  it (`antenna_id`,
   `antenna_type`, `in_evacuation_antenna`, `is_antenna_attachment`) and exposes
   them as `AnalysisContext.structural_antennas` /
   `RecommenderInputs.structural_antennas` (objects) and
@@ -39,6 +42,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ENABLE_STRUCTURAL_ANTENNAS` (default on), `STRUCTURAL_ANTENNA_MIN_MW`,
   `STRUCTURAL_ANTENNA_MAX_FRACTION`. Typing and payload only: the prioritized
   actions and scores are unchanged, guarded by an end-to-end test.
+- **Evacuation antennas as curtailment / redispatch levers (phase 4, opt-in).**
+  With `EVACUATION_ANTENNA_LEVERS` (default off), the generators of an
+  evacuation antenna — invisible so far, their branches being gray — reach the
+  constraint through the antenna's attachment node (the best one when it has
+  several): renewables become
+  curtailment candidates, dispatchable units lowering redispatch candidates
+  (`via_evacuation_antenna`, `evacuation_antenna_id` in their params). Each
+  family also adds one MW-sized option per antenna, spread pro rata over its
+  generators of that type in a single multi-generator `set_gen_p`
+  (`curtail_<antenna_id>`, `redispatch_<antenna_id>`). A **downstream**
+  evacuation antenna is only ever raised: upward redispatch through its
+  downstream attachment node, the aggregate being spread over the units'
+  headroom up to their `Pmax` — never curtailment, which would aggravate the
+  constraint. The aggregates move the generators' setpoints rather than their
+  produced power, which also carries their share of the load-flow slack (on
+  IEEE 14 that share reversed a 3 MW raise). `PypowsyblObservation` gains
+  `gen_pmax` (grid2op's name) and `gen_target_p` for that. Off by default:
+  the families are unchanged.
 
 ## [0.3.3.post3] - 2026-11-12
 

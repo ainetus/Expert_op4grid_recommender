@@ -187,7 +187,7 @@ expert_op4grid_recommender/
     - `"prioritized_actions"`: `{action_id: {action, description_unitaire, rho_before, rho_after, max_rho, max_rho_line, is_rho_reduction, observation, ...}}`
     - `"action_scores"`: per-type scoring dict (see Data Structures below)
     - `"reassessment_parallelism"`: `{parallel, workers, cores_available, n_actions}` — how the per-action reassessment was parallelised (v0.2.6+)
-    - `"structural_antennas"`: list of dicts — antennas hanging off the constrained path (evacuation antennas…), typed by step 2; payload only (see `docs/recommender/evacuation_antennas.md`)
+    - `"structural_antennas"`: list of dicts — antennas hanging off either side of the constrained path (upstream / downstream evacuation antennas…), typed by step 2; payload only unless `EVACUATION_ANTENNA_LEVERS` (see `docs/recommender/evacuation_antennas.md`)
     - `"prediction_time"` / `"assessment_time"`: per-stage execution times
     - Superposition theorem fields (`virtual_flows`, `delta_theta`, etc.) when available
 
@@ -322,11 +322,18 @@ ALLOWED_ACTION_TYPES = []
 ENABLE_ANTENNA_RECOMMENDATIONS = True
 
 # Structural antennas (unreleased): parts of the grid tied to the constrained
-# path through a single node, detected and typed on the overflow graph in step 2
-# ("evacuation" when an upstream one exports). Payload only for now.
+# path through a single node (or several, if insensitive), detected on both of
+# its sides and typed on the overflow graph in step 2 ("evacuation" /
+# "evacuation_downstream" when an upstream / downstream one exports).
 ENABLE_STRUCTURAL_ANTENNAS = True
 STRUCTURAL_ANTENNA_MIN_MW = 1.0       # minimum |export| to type an antenna
 STRUCTURAL_ANTENNA_MAX_FRACTION = 0.25  # size cap (share of graph nodes)
+# Evacuation antennas as levers (opt-in): curtailment / redispatch reach the
+# antenna's generators through its (best) attachment node, plus one MW-sized
+# pro-rata option per antenna (curtail_<antenna_id>, redispatch_<antenna_id>).
+# Upstream antennas are lowered; downstream ones only raised (redispatch,
+# within the units' Pmax headroom), never curtailed.
+EVACUATION_ANTENNA_LEVERS = False
 
 # Load shedding parameters (v0.1.9+)
 LOAD_SHEDDING_MARGIN = 0.05         # 5% safety margin on required shedding
@@ -713,7 +720,7 @@ See `docs/archive/MIGRATION_PLAN.md` for details. The goal is to remove `grid2op
 | Modify action scoring | `action_evaluation/discovery/` (per-family mixins); injection families share `_injection_base.py` |
 | Change graph analysis | `graph_analysis/builder.py`, `processor.py` |
 | Antenna (islanded-pocket) graph | `graph_analysis/antenna_graph.py`, `processor.py` (`extract_antenna_context`, `pre_process_antenna_graph`); see `docs/recommender/antenna_overflow_graph.md` |
-| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); see `docs/recommender/evacuation_antennas.md` |
+| Evacuation / structural antennas | `graph_analysis/structural_antennas.py` (`detect_structural_antennas`, `tag_structural_antennas`), `pipeline.py` (`_detect_structural_antennas`); levers in `discovery/_injection_base.py` (`_evacuation_antenna_reference`, `_evacuation_antenna_aggregates`); see `docs/recommender/evacuation_antennas.md` |
 | pypowsybl migration | `pypowsybl_backend/*`, `environment_pypowsybl.py` |
 | Adjust rho calculation | `pypowsybl_backend/observation.py`, `overflow_analysis.py` |
 | Configure monitoring | `config.py` (`LINES_MONITORING_FILE`, `IGNORE_LINES_MONITORING`) |

@@ -1,12 +1,15 @@
 # Plan — Antennes d'évacuation : un élément de structure du graphe de report
 
-> **Statut** : plan de conception. **Phases 0 à 2 implémentées** (branche
+> **Statut** : plan de conception. **Phases 0, 1, 2 et 4 implémentées** (branche
 > `feat/evacuation-antennas`) : helpers d'injection `utils/injections.py`, correctif
-> d'`antenna_meta` en pypowsybl, détection `graph_analysis/structural_antennas.py`, typage
-> sur le graphe et payload du pipeline. Phases 3 à 7 à faire.
+> d'`antenna_meta` en pypowsybl, détection `graph_analysis/structural_antennas.py` des deux
+> côtés du chemin contraint, typage sur le graphe et payload du pipeline, leviers derrière
+> `EVACUATION_ANTENNA_LEVERS` (coupé par défaut) : écrêtement et redispatch à la baisse en
+> amont, redispatch à la hausse en aval. Phases 3, 5, 6 et 7 à faire.
 > **Date** : 2026-11-16 · base `main` = `ainetus/main` `377301c3` (0.3.3.post3).
 > **Objet** : détecter sur le graphe de report (overflow graph) les antennes latérales
-> raccordées en un point du chemin en contrainte amont, les typer « antenne d'évacuation »,
+> raccordées en un point du chemin en contrainte, en amont comme en aval, les typer
+> « antenne d'évacuation »,
 > les intégrer comme élément de structure (graphe, rendu, payload), puis les exploiter comme
 > **levier** de recommandation.
 > **Liés** : [`antenna_overflow_graph.md`](antenna_overflow_graph.md) (poche îlotée),
@@ -49,9 +52,11 @@ chemin contraint vers la contrainte. Elle est aujourd'hui invisible à trois niv
    sauf si le repli « site HT » les rattrape par le nommage.
 
 > **« De même qu'on détecte les antennes de consommation »** : l'antenne de consommation
-> détectée aujourd'hui est la **poche îlotée** (la contrainte l'alimente). L'antenne de
-> consommation **latérale**, raccordée en un point du chemin contraint *aval*, n'est pas
-> détectée non plus. C'est le cas symétrique, traité par le même algorithme (Phase 7).
+> détectée jusqu'ici est la **poche îlotée** (la contrainte l'alimente). Les antennes
+> **latérales** du chemin contraint *aval* relèvent du même algorithme, et le pipeline les
+> détecte aussi. Une antenne aval qui exporte est une **antenne d'évacuation aval** (levier :
+> redispatch à la hausse, Phase 4). Une antenne aval qui importe est une antenne de
+> consommation latérale (levier : délestage, Phase 7).
 
 ---
 
@@ -70,17 +75,26 @@ Notations :
 Une **antenne amont** est une composante connexe `K` de `H − A` telle que :
 
 1. `K ∩ (V ∪ B) = ∅` : ce n'est pas « le reste du réseau » ;
-2. `K` est adjacente à **exactement un** nœud `a ∈ A` (le **point de raccordement**) ;
+2. `K` est adjacente à au moins un nœud de `A` (ses **points de raccordement**). Si elle l'est
+   à plusieurs, elle doit en plus être **insensible** : report sous le seuil des arêtes
+   grises (§2.2, décision 7) ;
 3. `|K|` reste sous un plafond de taille (garde-fou contre un « bassin » démesuré).
 
-Elle est typée **antenne d'évacuation** si son export au point `a` (`P_exp`, somme des
-transits sortant de `K` vers `a` sur les branches de raccordement) dépasse
-`STRUCTURAL_ANTENNA_MIN_MW`.
+Elle est typée **antenne d'évacuation** si son export aux points de raccordement (`P_exp`,
+somme des transits sortant de `K` sur les branches de raccordement) dépasse
+`STRUCTURAL_ANTENNA_MIN_MW`. Les points de raccordement sont classés par puissance échangée
+avec `K` ; le premier, noté `a`, donne son nom à l'antenne.
+
+Une **antenne aval** se définit de même en échangeant `A` et `V`. Si elle exporte, c'est une
+**antenne d'évacuation aval** (`evacuation_downstream`) : sa production entre dans la zone
+aval par son point de raccordement `v ∈ V`.
 
 On retrouve le critère « composants isolés si on supprime tous les nœuds du chemin en
 contrainte amont, raccordés par un point ». Une composante de `H − A` adjacente au seul `a`
 est exactement une composante de `H − {a}` qui ne touche ni `A ∖ {a}` ni `V ∪ B`. Autrement
-dit, `a` est un point d'articulation qui la sépare du reste du réseau.
+dit, `a` est un point d'articulation qui la sépare du reste du réseau. Une composante
+raccordée en plusieurs nœuds du même côté n'a plus de point d'articulation : elle relie ces
+nœuds entre eux, d'où la condition d'insensibilité.
 
 ### 2.2 Pourquoi le report est (quasi) nul, et pourquoi ce n'est pas le critère
 
@@ -91,17 +105,23 @@ variation d'angle que `a`. On a donc **Δ = 0 exactement** sur toutes les branch
 raccordement, même si `K` est maillée en interne. En AC il reste un résidu (pertes,
 compensation répartie sur les groupes de `K`), d'où le « proche de zéro ».
 
-Conséquence pour la conception : la détection est **topologique**. L'insensibilité
-(`|Δ| < ThresholdReportOfLine × |Δ_contrainte|`) est une **propriété vérifiée et reportée**
-(`report_ratio_max`, `is_insensitive`), pas un filtre. Un seuil sur le seul report
-confondrait l'antenne avec toute zone maillée peu sensible.
+Conséquence pour la conception : la détection est **topologique**. Pour une antenne raccordée
+en un point, l'insensibilité (`|Δ| < ThresholdReportOfLine × |Δ_contrainte|`) est une
+**propriété vérifiée et reportée** (`report_ratio_max`, `is_insensitive`), pas un filtre. Un
+seuil sur le seul report confondrait l'antenne avec toute zone maillée peu sensible.
+
+Une composante raccordée en plusieurs nœuds porte en revanche la différence de variation
+d'angle entre ces nœuds : son report n'est plus nul par construction. L'insensibilité devient
+alors le **critère** : la composante n'est une antenne que si ses branches restent grises.
 
 ### 2.3 Pourquoi c'est un levier
 
 Tout MW retiré de `K` est retiré **au nœud `a`**, qui est en amont. L'effet sur la contrainte
 est donc celui d'une injection en `a`, quelle que soit la profondeur du groupe dans l'antenne.
-Une seule référence d'influence suffit par antenne, avec les formules des familles
-d'injection existantes :
+Une seule référence d'influence suffit par antenne : son point de raccordement ou, si elle en
+a plusieurs, **le meilleur**, c'est-à-dire celui dont le flux d'influence est le plus fort
+parmi ceux qui sont dans le graphe d'influence du bon côté (décision 7). Les formules sont
+celles des familles d'injection existantes :
 
 ```
 f_a    = min(1, max(neg_in_a, neg_out_a) / P_ref)    # _injection_influence_factor
@@ -109,14 +129,25 @@ P_exc  = (ρ_max − 1) · P_ref                          # InjectionOverloadCon
 ΔP_req = P_exc · (1 + marge) / f_a                    # MW à retirer en a
 ```
 
+Symétriquement, tout MW **ajouté** dans une antenne d'évacuation aval l'est au nœud `v` : il
+alimente la zone aval et soulage la contrainte. Le levier est la **hausse** de production
+(redispatch ↑), dans la limite de la marge `Pmax − consigne` des groupes, avec la même
+référence d'influence (en `v`). L'écrêtement y aggraverait la contrainte : il n'est jamais
+proposé.
+
 ### 2.4 Typage (cadre générique, périmètre progressif)
 
 | Raccordement | Export au point de raccordement | Type | Levier |
 |---|---|---|---|
-| amont | `P_exp > seuil` (exporte) | **`evacuation`** (cible de ce plan) | baisse de production / écrêtement ; ouverture (option) |
-| amont | `P_exp < −seuil` (importe) | `consumption_upstream` | **contre-levier** : délester ici aggrave. Informatif. |
-| aval | `P_exp < −seuil` | `consumption` (Phase 7) | délestage dimensionné |
-| aval | `P_exp > seuil` | `production_downstream` (Phase 7) | hausse de production (redispatch ↑) |
+| amont | `P_exp > seuil` (exporte) | **`evacuation`** (`EVAC_`) | baisse de production / écrêtement (Phase 4) ; ouverture (option, Phase 5) |
+| amont | `P_exp < −seuil` (importe) | `consumption_upstream` (`CONS_UP_`) | **contre-levier** : délester ici aggrave. Informatif. |
+| aval | `P_exp < −seuil` (importe) | `consumption` (`CONS_`) | délestage dimensionné (Phase 7) |
+| aval | `P_exp > seuil` (exporte) | **`evacuation_downstream`** (`EVAC_DOWN_`) | hausse de production (redispatch ↑, Phase 4), jamais d'écrêtement |
+
+Les quatre types sont détectés et typés ; les deux types d'évacuation portent
+`in_evacuation_antenna` sur le graphe. `evacuation_downstream` s'appelait
+`production_downstream` dans les premières versions de ce plan, quand le pipeline ne
+scannait pas encore l'aval.
 
 ---
 
@@ -172,7 +203,7 @@ P_exc  = (ρ_max − 1) · P_ref                          # InjectionOverloadCon
                           │                     │                        │
                attributs du graphe        visualisation             discovery (leviers)
                (in_evacuation_antenna…)   (copie de rendu,          ├─ rc / redispatch : réf. = a
-                                           couche du viewer)        ├─ famille evacuation_antenna
+                                           couche du viewer)        ├─ options agrégées par antenne
                                                                     └─ ouverture (option)
                           └──────────────▶ AnalysisResult.structural_antennas (payload)
 ```
@@ -182,8 +213,9 @@ Modèle de données (implémenté dans `graph_analysis/structural_antennas.py`) 
 ```python
 @dataclass
 class StructuralAntenna:
-    antenna_id: str              # stable : f"EVAC_{attachment_sub_name}_{k}"
-    antenna_type: str            # "evacuation" | "consumption_upstream" | (aval) ...
+    antenna_id: str              # stable : f"{préfixe}_{attachment_sub_name}_{k}" (EVAC_…)
+    antenna_type: str            # "evacuation" | "consumption_upstream" | "consumption"
+                                 # | "evacuation_downstream"
     side: str                    # "amont" | "aval"
     attachment_node: Any         # libellé du nœud de raccordement dans le graphe
     attachment_sub_id: Optional[int]
@@ -201,6 +233,9 @@ class StructuralAntenna:
     loads: List[str]
     report_ratio_max: float      # max |Δ| sur ses branches / |Δ| de la contrainte
     is_insensitive: bool         # report_ratio_max < ThresholdReportOfLine
+    attachment_nodes: List[Any]  # tous les points de raccordement, par puissance échangée
+    attachment_sub_ids: List[int]  #   décroissante (le premier = attachment_node)
+    attachment_sub_names: List[str]
 ```
 
 Détection (une passe en O(V+E)) ; esquisse du côté amont, l'implémentation traite aussi
@@ -263,15 +298,16 @@ valeurs par défaut laissent les recommandations **identiques**.
     de charges via la Phase 0 ;
   - `report_ratio_max` lu sur l'attribut `capacity` des arêtes (report en MW), rapporté au
     `max |report|` des arêtes en contrainte : pas besoin de `df_of_g`.
-- Typage : côté amont par défaut (`evacuation`, `consumption_upstream`). L'aval
-  (`consumption`, `production_downstream`) est déjà détectable avec `sides=("amont", "aval")`
-  ; son câblage reste en Phase 7.
+- Typage : `detect_structural_antennas` scanne l'amont par défaut (`evacuation`,
+  `consumption_upstream`) et l'aval sur demande avec `sides=("amont", "aval")`
+  (`consumption`, `evacuation_downstream`). Le pipeline scanne les deux côtés (Phase 2).
 - Tests dans `tests/test_structural_antennas.py`. Le graphe de report y est construit comme
   dans le pipeline (répartition DC après coupure, `_compute_delta_flow_frame`,
   `OverFlowGraph`, graphe structuré alphaDeesp) sur un réseau de 13 postes :
   - antenne d'évacuation détectée (point de raccordement, export ≈ production nette, ratio ≈ 0) ;
   - antenne maillée en interne mais raccordée en un point : détectée ;
-  - poche raccordée à **deux** nœuds amont : rejetée ;
+  - poche raccordée à **deux** nœuds amont (D1, branches grises) : antenne à deux points de
+    raccordement, classés par puissance échangée ; rejetée si son report dépasse le seuil ;
   - composante du reste du réseau : rejetée ;
   - raccordement par une ligne **ouverte** (la contingence) : ignoré ;
   - antenne amont importatrice : typée `consumption_upstream` ;
@@ -296,7 +332,7 @@ valeurs par défaut laissent les recommandations **identiques**.
   **sans effet** sur les recommandations.
 - `pipeline.py` : `_detect_structural_antennas` est appelé dans `run_analysis_step2_graph`
   juste après `backend.build_overflow_graph(...)`, donc avant le rendu et avant que la
-  découverte ne renumérote les nœuds. Il ne tourne pas en mode poche, où
+  découverte ne renumérote les nœuds. Il scanne les deux côtés du chemin contraint. Il ne tourne pas en mode poche, où
   `structural_antennas` vaut `[]`. Un échec de la détection est journalisé et n'interrompt
   pas l'analyse.
 - Données exposées :
@@ -307,8 +343,9 @@ valeurs par défaut laissent les recommandations **identiques**.
   d'une antenne reçoivent `antenna_id`, `antenna_type` et `in_evacuation_antenna` ; le nœud de
   raccordement reçoit `is_antenna_attachment`. Un attribut absent vaut « non ». Les attributs
   survivent au `relabel_nodes` de `pre_process_graph_alphadeesp`.
-- Journal : une ligne de synthèse, puis une ligne par antenne d'évacuation, par exemple
-  « EVAC_SSV.OP7_1 attached to SSV.OP7: 2 node(s), export 1704 MW, max report 0.0% ».
+- Journal : une ligne de synthèse, puis une ligne par antenne d'évacuation, amont ou aval,
+  par exemple « EVAC_SSV.OP7_1 attached to SSV.OP7 (amont): 2 node(s), export 1704 MW, max
+  report 0.0% ».
 - Tests dans `tests/test_structural_antennas.py` :
   - typage : nœuds, branches et raccordement ; rien d'autre ne change et les vues alphaDeesp
     (chemin contraint, boucles rouges, hubs) restent identiques ; les attributs survivent à la
@@ -317,8 +354,14 @@ valeurs par défaut laissent les recommandations **identiques**.
     la détection, mode poche, transmission au modèle et au résultat ;
   - garde de non-régression de bout en bout sur le petit réseau de test (pypowsybl,
     P.SAOL31RONCI) : `prioritized_actions` et `action_scores` **identiques** avec ou sans
-    détection, alors que 5 antennes y sont détectées et typées (≈ 14 s, deux analyses).
-- Mesuré sur ce cas (93 nœuds) : 5 antennes, dont 3 d'évacuation, en 1,5 à 2,4 ms.
+    détection, alors que 6 antennes y sont détectées et typées (≈ 14 s, deux analyses).
+- Mesuré sur ce cas (93 nœuds) : 6 antennes, dont 3 d'évacuation, en 1,5 à 2,4 ms. Toutes
+  sont en amont : le chemin aval, en 63 kV, n'en porte aucune. La sixième, `CONS_UP_CHALOP6_1`,
+  est apparue avec le multi-raccordement (décision 7) : une région 63 kV de 20 postes
+  (175 MW de charge) raccordée à trois nœuds 225 kV amont, CHALOP6, COUCHP6 et VIELMP6, avec
+  un report nul. Sur les 139 contingences du
+  petit réseau, une seule autre crée une surcharge, et sa seule antenne aval est une
+  antenne de consommation.
   `EVAC_SSV.OP7_1` (BUGEYP1 et BUGEYP7) exporte 1 704 MW ; `EVAC_VIELMP7_1` (7 postes)
   exporte 795 MW, avec un report maximal de 4 % en AC, sous le seuil de 5 %.
 
@@ -335,43 +378,95 @@ valeurs par défaut laissent les recommandations **identiques**.
 - Tests : attributs posés ; couleurs du graphe d'analyse inchangées après le rendu ; arêtes
   d'antenne présentes dans le rendu filtré.
 
-### Phase 4 — Levier « modulation de production dans l'antenne » *(M/L)*
+### Phase 4 — Levier « modulation de production dans l'antenne » *(M/L)* — **fait**
 
-- **4a — familles existantes.** Dans rc et redispatch (sens `down`), la résolution du nœud de
-  référence devient :
+Un groupe d'une antenne d'évacuation agit sur la contrainte au point de raccordement. Le
+levier donne donc des options d'**écrêtement** ou de **redispatching**, selon le type de
+production évacuée et le côté de la contrainte :
+
+| Antenne | EnR | Groupes pilotables (thermique, nucléaire, hydraulique…) |
+|---|---|---|
+| `evacuation` (amont) | écrêtement (rc) | redispatch à la baisse |
+| `evacuation_downstream` (aval) | rien : l'écrêtement aggraverait la contrainte | redispatch à la hausse |
+
+Ces options vont dans les familles existantes plutôt que dans une famille dédiée (décisions
+3, 4 et 6 du §8). La correspondance entre sens et type d'antenne est explicite
+(`EVACUATION_ANTENNA_TYPE`, `_injection_base.py`). Une antenne amont n'est jamais montée,
+même quand son point de raccordement est aussi un nœud de hausse (hub d'une boucle rouge),
+et une antenne aval n'est jamais baissée.
+
+- **4a — options unitaires.** Dans rc (amont seulement) et redispatch (les deux sens), la
+  résolution du nœud de référence devient :
   1. nœud propre du groupe ;
-  2. **(nouveau) antenne d'évacuation contenant le poste : référence = `a`** ;
+  2. **antenne d'évacuation du bon côté contenant le poste : référence = son meilleur point
+     de raccordement** (`_evacuation_antenna_reference`, `_evacuation_antenna_attachment`) ;
   3. repli site HT.
 
-  Nouveaux params : `via_evacuation_antenna`, `evacuation_antenna_id`,
-  `influence_ref_substation = a`.
-- **4b — nouvelle famille `evacuation_antenna`.** C'est un levier agrégé, dimensionné en MW.
-  Il répond au constat du banc THT selon lequel « l'amplitude unitaire ne mord pas ». Un
-  candidat par antenne :
-  - `P_mod` = production modulable de l'antenne (EnR seules ou tous groupes, selon un
-    paramètre) ;
-  - `ΔP = min(P_mod, ΔP_req)` ;
-  - répartition au prorata, `P_g' = P_g · (1 − ΔP / P_mod)`, dans une seule action
-    `set_gen_p` multi-groupes ;
-  - `score = f_a · min(1, P_mod / ΔP_req)`.
-
-  Déclaration :
-  - `FamilySpec("evacuation_antenna", …, scores_key="evacuation_antenna")`, ajoutée en fin
-    d'`ACTION_SCORES_ORDER` ;
-  - `MIN_EVACUATION_ANTENNA` ;
-  - jeton `ALLOWED_ACTION_TYPES` `"evac"` ;
-  - dans les phases min et fill, en tête des familles d'injection (avant
-    `renewable_curtailment`) : une baisse de production est préférée au délestage ;
-  - mise à jour de `_empty_action_scores`.
-- Interrupteur : `EVACUATION_ANTENNA_LEVERS = False` jusqu'à la Phase 6.
-- À vérifier : `ActionClassifier` / `ActionType`, la réévaluation et les paires GST
-  (`is_injection_action`) sur une action `set_gen_p` multi-groupes.
+  Ces candidats gagnent les params `via_evacuation_antenna` et `evacuation_antenna_id`, et
+  `influence_ref_substation` vaut le point de raccordement. Sans l'étape 2, ces groupes sont
+  invisibles : leurs arêtes sont grises, et le repli site HT échoue dès que le poste HT du
+  site est lui aussi dans l'antenne (Bugey : `BUGEYP1` et `BUGEYP7`). Le pas reste celui de
+  la famille (`REDISPATCH_DEFAULT_DELTA_MW`, voir §7).
+- **4b — options agrégées, dimensionnées en MW.** Une option par antenne et par famille,
+  répartie au prorata sur les groupes de ce type (`_evacuation_antenna_aggregates`) :
+  - `ΔP_req = P_exc · (1 + marge) / f_a`, avec la marge de la famille et `f_a` pris au
+    meilleur point de raccordement, qui devient la `substation` de l'option ;
+  - la variation part de la **consigne** `S_g` des groupes (`gen_target_p`), pas de leur
+    production observée. Celle-ci porte aussi leur part de la compensation répartie de la
+    charge : sur IEEE 14, cette part (3,5 MW) inversait une hausse dimensionnée de 3 MW.
+    Sans consigne connue, la production observée sert de repli ;
+  - en amont (baisse) : marge `M_g = S_g` et `P_g' = S_g · (1 − ΔP / ΣS_g)` ;
+  - en aval (hausse) : marge `M_g = Pmax_g − S_g` et `P_g' = S_g + M_g · ΔP / ΣM_g`.
+    `Pmax` vient de `gen_pmax`, que l'observation pypowsybl expose désormais (`max_p`). Les
+    groupes de `Pmax` inconnu sont écartés, et sans `gen_pmax` l'option agrégée n'est pas
+    émise ;
+  - `ΔP = min(ΣM_g, ΔP_req)` et `score = f_a · min(1, ΣM_g / ΔP_req)` ;
+  - une seule action `set_gen_p` multi-groupes ;
+  - identifiants `curtail_<antenna_id>` et `redispatch_<antenna_id>` : les préfixes des
+    familles, que le classifieur (`gen_power_reduction`, `gen_redispatch`) et les paires GST
+    (`is_injection_action`) reconnaissent déjà ;
+  - params : `gen_names`, `target_p_MW` par groupe, `reduction_MW` (rc) ou `delta_MW` signé
+    et `applied_MW` (redispatch), `headroom_MW` (hausse), `via_evacuation_antenna`,
+    `evacuation_antenna_id` ;
+  - une option agrégée identique à une option unitaire (un seul groupe EnR, coupé
+    entièrement) n'est pas émise.
+- Interrupteur : `EVACUATION_ANTENNA_LEVERS = False` jusqu'à la Phase 6. Coupé, les familles
+  sont strictement inchangées (`_get_evacuation_antennas_by_sub` est vide). Seules les
+  antennes d'évacuation servent de levier, jamais une antenne de consommation. Le module de
+  découverte reçoit `structural_antennas` du contexte.
 - Tests :
-  - candidats rc / redispatch pour un groupe d'antenne, avec
-    `influence_ref_substation == a` ;
-  - aucun candidat quand `EVACUATION_ANTENNA_LEVERS=False` (sorties identiques) ;
-  - dimensionnement et répartition au prorata ;
-  - une antenne `consumption_upstream` n'est jamais proposée au délestage.
+  - `tests/test_ActionDiscoverer.py`, section « Evacuation antennas as levers » :
+    - amont : interrupteur coupé, référence `a`, dimensionnement et prorata, pas de doublon,
+      antenne `consumption_upstream` exclue, priorisation, reconnaissance comme injection,
+      jamais de hausse même quand le raccordement est un nœud de hausse ;
+    - aval : interrupteur coupé, référence `v` et sens `up`, prorata sur la marge à partir de
+      la consigne, plafond `Pmax`, pas d'option agrégée sans `gen_pmax`, repli sur la
+      production observée sans consigne, jamais d'écrêtement ;
+    - plusieurs points de raccordement : référence et score sur le meilleur, ou sur le
+      suivant quand le meilleur n'est pas un nœud du bon sens ;
+  - `tests/test_structural_antennas.py` :
+    - `test_evacuation_levers_end_to_end` (marqué `slow`) : sur le petit réseau de test, les
+      groupes nucléaires des deux antennes amont donnent 4 options unitaires et 2 agrégées,
+      qui passent la réévaluation et les paires GST ;
+    - `test_downstream_evacuation_lever_end_to_end` (IEEE 14 en AC, 0,2 s, en CI) : le
+      déclenchement de T4-9 surcharge T4-7 (sens 4 → 7), et le bus 8 devient une antenne
+      d'évacuation aval (B8-G : consigne 10 MW, 6,5 MW produits après compensation). Le
+      pipeline propose l'option unitaire et l'option agrégée (+3,06 MW de consigne), et la
+      réévaluation confirme qu'elles soulagent la contrainte : ρ passe de 1,086 à 0,991 et
+      à 1,041 ;
+  - `tests/test_pypowsybl_backend.py` : `gen_pmax` et `gen_target_p` suivent `max_p` et
+    `target_p` du réseau.
+- **Constat : le dimensionnement par `f_a` est optimiste.**
+  - Petit réseau, en amont : la contrainte, « BEON L31CPVAN » (ρ = 1,036), est loin des
+    antennes 400 kV. `f_a` vaut 0,28 au raccordement de Bugey, d'où `ΔP_req` ≈ 3,4 MW, alors
+    que la sensibilité réelle est de l'ordre de 1 % : −10 MW sur un groupe de Bugey ne font
+    descendre ρ qu'à 1,032. La coupe agrégée de 3,4 MW est sans effet mesurable.
+  - IEEE 14, en aval : `f_a` vaut 1,0 au raccordement (VL7, extrémité de la contrainte), mais
+    la hausse dimensionnée de 3,06 MW ne ramène ρ qu'à 1,041 : la sensibilité réelle est
+    environ deux fois plus faible.
+
+  C'est l'heuristique de toutes les familles d'injection ; à mesurer en Phase 6, et à
+  remplacer par une sensibilité calculée (Phase 7).
 
 ### Phase 5 — Levier « ouverture de l'antenne » *(S/M, opt-in)*
 
@@ -394,15 +489,20 @@ valeurs par défaut laissent les recommandations **identiques**.
 - Attendu : un gain surtout sur réseau **complet**. Sur un réseau THT réduit, les antennes HT
   sont souvent déjà agrégées en injections équivalentes au nœud frontière, donc déjà
   atteignables.
+- Calibrer le dimensionnement : comparer `f_a` à la sensibilité réelle de la contrainte (sur
+  le petit réseau de test, 0,28 contre environ 1 % en amont ; sur IEEE 14, 1,0 contre
+  environ 0,5 en aval). Si l'écart est systématique, dimensionner sur une sensibilité
+  calculée : une simulation par antenne, ou la sensibilité DC de la Phase 7.
 - Si les résultats le justifient, basculer `EVACUATION_ANTENNA_LEVERS = True`. Mettre à jour
   les release notes, `CHANGELOG.md`, `CLAUDE.md`, et transformer ce document en doc de
   conception.
 
 ### Phase 7 — Extensions *(optionnel)*
 
-- **Cas symétrique aval** : même algorithme sur `n_aval()`. Il produit les types `consumption`
-  (le délestage s'étend aux antennes de consommation latérales, avec pour référence le point
-  de raccordement aval) et `production_downstream` (redispatch ↑).
+- **Antennes de consommation latérales aval** : le pipeline les détecte et les type
+  `consumption` depuis la Phase 4. Reste le levier : étendre le délestage à ces antennes, avec
+  pour référence le point de raccordement aval. (Les antennes d'évacuation aval, elles,
+  servent déjà de levier : redispatch ↑, Phase 4.)
 - **Sensibilité exacte** : remplacer le `f_a` heuristique par la sensibilité DC de la
   contrainte à une injection en `a` (`pypowsybl.sensitivity`, une matrice pour toutes les
   antennes).
@@ -421,12 +521,15 @@ valeurs par défaut laissent les recommandations **identiques**.
 | `ENABLE_STRUCTURAL_ANTENNAS` | `True` | détection, typage et payload (sans effet sur les recommandations) |
 | `STRUCTURAL_ANTENNA_MIN_MW` | `1.0` | export minimal pour typer une antenne |
 | `STRUCTURAL_ANTENNA_MAX_FRACTION` | `0.25` | plafond de taille (part des nœuds du graphe) |
-| `EVACUATION_ANTENNA_LEVERS` | `False`, puis `True` après la Phase 6 | active 4a et 4b |
-| `EVACUATION_ANTENNA_MARGIN` | `0.05` | marge sur `ΔP_req` |
-| `EVACUATION_ANTENNA_GEN_SCOPE` | `"renewable"` | périmètre du levier agrégé (`"renewable"` ou `"all"`) |
-| `MIN_EVACUATION_ANTENNA` | `0` | plancher de candidats retenus |
+| `EVACUATION_ANTENNA_LEVERS` | `False`, puis `True` après la Phase 6 | options unitaires (4a) et agrégées (4b) : écrêtement et redispatch ↓ en amont, redispatch ↑ en aval |
 | `EVACUATION_ANTENNA_ALLOW_OPENING` | `False` | active la Phase 5 |
 | `EVACUATION_ANTENNA_OPENING_MAX_LOAD_MW` | `1.0` | charge maximale îlotée tolérée |
+
+Les options agrégées reprennent la marge et le minimum en MW de leur famille
+(`RENEWABLE_CURTAILMENT_*`, `REDISPATCH_*`), ainsi que ses planchers `MIN_*` et son jeton
+`ALLOWED_ACTION_TYPES`. Les paramètres envisagés pour une famille dédiée
+(`EVACUATION_ANTENNA_MARGIN`, `EVACUATION_ANTENNA_GEN_SCOPE`, `MIN_EVACUATION_ANTENNA`) n'ont
+donc plus lieu d'être.
 
 ---
 
@@ -434,7 +537,9 @@ valeurs par défaut laissent les recommandations **identiques**.
 
 - **Antenne « géante »** : si `a` isole tout un bassin de production, c'est physiquement une
   antenne d'évacuation, mais le levier devient un redispatch régional. D'où le plafond de
-  taille et la journalisation des rejets.
+  taille et la journalisation des rejets. Le multi-raccordement rend ce cas plus fréquent : sur
+  le petit réseau de test, une région 63 kV de 20 postes raccordée à trois nœuds 225 kV
+  (`CONS_UP_CHALOP6_1`, ≈ 21 % des nœuds) passe sous le plafond de 25 %.
 - **Contraintes multiples ou en série** : un nœud aval d'une contrainte peut être en amont
   d'une autre. Le typage suit la contrainte de référence d'alphaDeesp ; la vérification par
   simulation (`_check_rho_with_baseline` sur toutes les surcharges) écarte les leviers qui en
@@ -446,8 +551,22 @@ valeurs par défaut laissent les recommandations **identiques**.
   nœud via leur bus. Test dédié.
 - **AC** : compensation répartie et pertes laissent un petit report dans l'antenne ;
   `is_insensitive` le signale sans exclure l'antenne.
-- **Co-Study4Grid** : afficher `structural_antennas` et la famille `evacuation_antenna`. Suivi
-  côté UI, dans un dépôt séparé.
+- **Options unitaires de redispatch** (famille existante) : elles partent de la production
+  observée et non de la consigne. Leur variation réelle de consigne diffère donc du pas de la
+  part de compensation du groupe : sur IEEE 14, les +10 MW demandés sur B8-G font +6,5 MW de
+  consigne. Elles ne contrôlent pas non plus `Pmax`. Les options agrégées partent de la
+  consigne et respectent `Pmax`. Corriger les options unitaires changerait les sorties
+  actuelles de la famille, leviers coupés compris : à traiter à part.
+- **Co-Study4Grid** :
+  - le backend transmet `structural_antennas` dans l'événement NDJSON `result`
+    (`expert_backend/services/analysis_mixin.py`, garde de non-régression
+    `test_result_event_forwards_structural_antennas_from_discovery`). C'est vérifié de bout
+    en bout sur un cas réel (3 antennes dans l'événement). Cet événement sélectionne les clés
+    de `AnalysisResult` une à une : tout nouveau champ doit y être ajouté ;
+  - reste à afficher les antennes, et à prendre en charge les options agrégées avant
+    d'activer les leviers. Leurs params portent `gen_names`, un `target_p_MW` par groupe et,
+    pour une hausse, `headroom_MW`, là où les options unitaires ont `gen_name` et un
+    `target_p_MW` scalaire.
 
 ---
 
@@ -457,8 +576,16 @@ valeurs par défaut laissent les recommandations **identiques**.
    `evacuation_antennas` dédié.
 2. **Leviers par défaut** : désactivés jusqu'au banc (recommandé, dans la ligne des releases
    « behaviour-preserving »), ou actifs d'emblée.
-3. **Levier agrégé** : famille dédiée `evacuation_antenna` (recommandé), ou fondu dans
-   rc / redispatch.
-4. **Périmètre du levier agrégé** : EnR seules par défaut (écrêtement), ou tous les groupes
-   (baisse via redispatch).
+3. **Levier agrégé** : tranché le 2026-11-16. Les options vont dans rc et redispatch, selon
+   le type de production évacuée, plutôt que dans une famille dédiée.
+4. **Périmètre du levier agrégé** : tranché avec la décision 3. Les EnR sont proposées en
+   écrêtement, les groupes pilotables en redispatch ; il n'y a plus de paramètre de
+   périmètre.
 5. **Ouverture de l'antenne** : opt-in, sans charge îlotée. À confirmer côté exploitation.
+6. **Antennes d'évacuation aval** : tranché le 2026-11-16. Elles sont détectées comme les
+   antennes amont, et leur levier est la hausse des groupes pilotables (redispatch ↑),
+   jamais l'écrêtement.
+7. **Plusieurs points de raccordement** : tranché le 2026-11-17. Une composante raccordée en
+   plusieurs nœuds du même côté du chemin contraint est une antenne si elle est insensible
+   (branches grises). Ses options prennent la référence et le score du meilleur de ces
+   nœuds.

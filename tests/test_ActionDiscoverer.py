@@ -2581,3 +2581,359 @@ def test_empty_allowed_action_types_keeps_all_families(redispatch_discoverer, mo
     assert calls["find_relevant_redispatch"]["called"]
     assert calls["find_relevant_disconnections"]["called"]
     assert calls["find_relevant_load_shedding"]["called"]
+
+
+# ===========================================================================
+# Section: Evacuation antennas as levers (EVACUATION_ANTENNA_LEVERS)
+# ===========================================================================
+# Network topology used in these tests:
+#   K2 ── K1 ── Sub0 (amont) --L1-- Sub1 (constraint) --L2-- Sub2 (aval)
+#   K1 / K2 form an evacuation antenna attached to Sub0: its branches L3 / L4
+#   are gray, so K1 / K2 never carry influence in the overflow graph.
+#   L1 is overloaded at 120 %, capacity 100 MW -> P_exc = 20 MW; Sub0 has
+#   neg_out = 80 -> f_a = 0.8 and ΔP_req = 20 x 1.05 / 0.8 = 26.25 MW.
+#   K1: Wind_K 60 MW + Therm_K 100 MW; K2: Solar_K 20 MW; Sub0: Therm0 50 MW.
+
+from expert_op4grid_recommender.graph_analysis.structural_antennas import StructuralAntenna
+
+
+def _evacuation_antenna(antenna_type="evacuation"):
+    return StructuralAntenna(
+        antenna_id="EVAC_Sub0_1", antenna_type=antenna_type, side="amont",
+        attachment_node=0, attachment_sub_id=0, attachment_sub_name="Sub0",
+        nodes=[3, 4], sub_ids=[3, 4], sub_names=["K1", "K2"],
+        connection_lines=["L3"], internal_lines=["L4"],
+        export_mw=180.0, prod_mw=180.0, load_mw=0.0,
+        renewable_gens=["Wind_K", "Solar_K"], dispatchable_gens=["Therm_K"], loads=[],
+        report_ratio_max=0.0, is_insensitive=True,
+    )
+
+
+def _evacuation_discoverer(antennas, gen_values=(-60.0, -20.0, -100.0, -50.0)):
+    mock_obs = MockObservation(
+        name_sub=np.array(["Sub0", "Sub1", "Sub2", "K1", "K2"]),
+        name_line=np.array(["L1", "L2", "L3", "L4"]),
+        name_load=np.array(["Load_A"]),
+        name_gen=np.array(["Wind_K", "Solar_K", "Therm_K", "Therm0"]),
+        line_or_to_subid=np.array([0, 1, 0, 3]),
+        line_ex_to_subid=np.array([1, 2, 3, 4]),
+        rho=np.array([1.2, 0.5, 0.3, 0.1]),   # L1 overloaded at 120%
+        load_to_subid=np.array([2]),
+        gen_to_subid=np.array([3, 4, 3, 0]),
+        load_values=[50.0],
+        gen_values=list(gen_values),           # negative = producing
+        gen_energy_sources=["WIND", "SOLAR", "THERMAL", "THERMAL"],
+    )
+    mock_env = MockEnv(name_line=list(mock_obs.name_line), name_sub=list(mock_obs.name_sub))
+    mock_g_overflow = MockOverflowGraph(edge_data={
+        (0, 1): {0: {"name": "L1", "capacity": 100.0, "label": "-80"}},
+        (1, 2): {0: {"name": "L2", "capacity": 60.0, "label": "-60"}},
+        (0, 3): {0: {"name": "L3", "capacity": 0.0, "label": "0"}},  # gray antenna feeder
+        (3, 4): {0: {"name": "L4", "capacity": 0.0, "label": "0"}},  # gray, inside
+    })
+    mock_g_dist = MockDistributionGraphWithPath(
+        constrained_edges=["L1", "L2"], aval_nodes=[2], amont_nodes=[0])
+    return ActionDiscoverer(
+        env=mock_env, obs=mock_obs, obs_defaut=mock_obs,
+        classifier=ActionClassifier(MockActionSpace()),
+        timestep=0, lines_defaut=["L1"], lines_overloaded_ids=[0],
+        act_reco_maintenance=MockActionObject(),
+        non_connected_reconnectable_lines=[], all_disconnected_lines=[],
+        dict_action={}, actions_unfiltered=set(), hubs=[],
+        g_overflow=mock_g_overflow, g_distribution_graph=mock_g_dist,
+        simulator_data={}, check_action_simulation=False,
+        structural_antennas=antennas,
+    )
+
+
+def _run_generator_families(d):
+    d.find_relevant_renewable_curtailment(list(range(5)))
+    d.find_relevant_redispatch(nodes_up_indices=[2], nodes_down_indices=[0])
+    return d
+
+
+@pytest.fixture
+def evacuation_levers_on(monkeypatch):
+    from expert_op4grid_recommender import config
+    monkeypatch.setattr(config, "EVACUATION_ANTENNA_LEVERS", True)
+
+
+def test_evacuation_levers_off_leave_the_generator_families_unchanged():
+    with_antennas = _run_generator_families(_evacuation_discoverer([_evacuation_antenna()]))
+    without = _run_generator_families(_evacuation_discoverer([]))
+    for family in ("renewable_curtailment", "redispatch"):
+        on, off = with_antennas.results[family], without.results[family]
+        assert list(on.identified) == list(off.identified)
+        assert on.scores == off.scores and on.params == off.params
+    # The antenna generators are unreachable without the levers.
+    assert list(with_antennas.identified_renewable_curtailment) == []
+    assert list(with_antennas.identified_redispatch) == ["redispatch_Therm0"]
+
+
+def test_antenna_generators_reach_the_constraint_through_the_attachment(evacuation_levers_on):
+    d = _run_generator_families(_evacuation_discoverer([_evacuation_antenna()]))
+    for params in (d.params_renewable_curtailment["curtail_Wind_K"],
+                   d.params_renewable_curtailment["curtail_Solar_K"],
+                   d.params_redispatch["redispatch_Therm_K"]):
+        assert params["influence_ref_substation"] == "Sub0"
+        assert params["influence_factor"] == 0.8
+        assert params["via_evacuation_antenna"] is True
+        assert params["evacuation_antenna_id"] == "EVAC_Sub0_1"
+    therm_k = d.params_redispatch["redispatch_Therm_K"]
+    assert therm_k["direction"] == "down"
+    assert therm_k["target_p_MW"] == 90.0  # 100 - the default 10 MW step
+    # A generator on the constrained path keeps its direct reference.
+    assert "via_evacuation_antenna" not in d.params_redispatch["redispatch_Therm0"]
+
+
+def test_aggregated_curtailment_is_sized_by_the_overload_and_pro_rata(evacuation_levers_on):
+    d = _evacuation_discoverer([_evacuation_antenna()])
+    calls = []
+    original = d.action_space
+    d.action_space = lambda action_dict: calls.append(action_dict) or original(action_dict)
+    _run_generator_families(d)
+
+    p = d.params_renewable_curtailment["curtail_EVAC_Sub0_1"]
+    assert p["gen_names"] == ["Solar_K", "Wind_K"]  # renewables only, not Therm_K
+    assert p["gen_p"] == 80.0
+    assert p["mw_required"] == 26.25                # 20 MW x 1.05 / f_a 0.8
+    assert p["reduction_MW"] == 26.25
+    assert p["target_p_MW"] == {"Solar_K": 13.44, "Wind_K": 40.31}  # x (1 - 26.25 / 80)
+    assert d.scores_renewable_curtailment["curtail_EVAC_Sub0_1"] == 0.8
+    sent = [c["set_gen_p"] for c in calls if set(c.get("set_gen_p", {})) == {"Wind_K", "Solar_K"}]
+    assert sent[0]["Wind_K"] == pytest.approx(40.3125)
+
+
+def test_aggregated_redispatch_lowers_the_dispatchable_production(evacuation_levers_on):
+    d = _run_generator_families(_evacuation_discoverer([_evacuation_antenna()]))
+    p = d.params_redispatch["redispatch_EVAC_Sub0_1"]
+    assert p["direction"] == "down"
+    assert p["gen_names"] == ["Therm_K"]
+    assert p["target_p_MW"] == {"Therm_K": 73.75}  # sized, unlike the 10 MW unit step
+    assert p["delta_MW"] == -26.25
+    assert d.scores_redispatch["redispatch_EVAC_Sub0_1"] == 0.8
+
+
+def test_aggregate_identical_to_a_unit_cut_is_not_duplicated(evacuation_levers_on):
+    """Solar alone (20 MW, below the 26.25 MW needed): the aggregate would cut it
+    to 0, which is exactly the unit ``curtail_Solar_K`` action."""
+    d = _run_generator_families(_evacuation_discoverer(
+        [_evacuation_antenna()], gen_values=(0.0, -20.0, -100.0, -50.0)))
+    assert "curtail_Solar_K" in d.identified_renewable_curtailment
+    assert "curtail_EVAC_Sub0_1" not in d.identified_renewable_curtailment
+
+
+def test_only_evacuation_antennas_become_levers(evacuation_levers_on):
+    """An upstream antenna that imports is a counter-lever: nothing is offered
+    through it."""
+    d = _run_generator_families(
+        _evacuation_discoverer([_evacuation_antenna("consumption_upstream")]))
+    assert d._get_evacuation_antennas_by_sub() == {}
+    assert list(d.identified_renewable_curtailment) == []
+    assert list(d.identified_redispatch) == ["redispatch_Therm0"]
+
+
+def test_evacuation_levers_reach_the_prioritization(evacuation_levers_on, monkeypatch):
+    from expert_op4grid_recommender import config
+    monkeypatch.setattr(config, "ALLOWED_ACTION_TYPES", ["rc", "redispatch"])
+    d = _evacuation_discoverer([_evacuation_antenna()])
+    prioritized, action_scores = d.discover_and_prioritize(n_action_max=10)
+    assert "curtail_EVAC_Sub0_1" in action_scores["renewable_curtailment"]["scores"]
+    assert "redispatch_EVAC_Sub0_1" in action_scores["redispatch"]["scores"]
+    assert {"curtail_EVAC_Sub0_1", "redispatch_EVAC_Sub0_1"} <= set(prioritized)
+
+
+def test_evacuation_aggregates_are_recognised_as_injection_actions():
+    """The ids reuse the family prefixes, so the classifier and the
+    superposition (GST) pairs handle them like any curtailment / redispatch."""
+    from expert_op4grid_recommender.utils.superposition import is_injection_action
+    classifier = ActionClassifier(MockActionSpace())
+    assert classifier.identify_action_type(
+        {"id": "redispatch_EVAC_Sub0_1", "set_gen_p": {"Therm_K": 73.75}}) == "gen_redispatch"
+    assert classifier.identify_action_type(
+        {"id": "curtail_EVAC_Sub0_1", "set_gen_p": {"Wind_K": 40.31, "Solar_K": 13.44}}
+    ) == "gen_power_reduction"
+    assert is_injection_action("curtail_EVAC_Sub0_1")
+    assert is_injection_action("redispatch_EVAC_Sub0_1")
+
+
+# Downstream evacuation antenna: the same K1 / K2 antenna, attached to Sub2
+# (aval) through the gray L3, so raising its production relieves L1:
+#   Sub0 (amont) --L1-- Sub1 --L2-- Sub2 (aval) ── K1 ── K2
+#   Sub2 has neg_in = 60 -> f_a = 0.6 and ΔP_req = 20 x 1.05 / 0.6 = 35 MW.
+#   K1: Wind_K 60 MW + Therm_K 100 MW (setpoint 102, Pmax 150);
+#   K2: Hydro_K 20 MW (Pmax 30); Sub0: Therm0 50 MW.
+
+def _downstream_evacuation_antenna():
+    return StructuralAntenna(
+        antenna_id="EVAC_DOWN_Sub2_1", antenna_type="evacuation_downstream", side="aval",
+        attachment_node=2, attachment_sub_id=2, attachment_sub_name="Sub2",
+        nodes=[3, 4], sub_ids=[3, 4], sub_names=["K1", "K2"],
+        connection_lines=["L3"], internal_lines=["L4"],
+        export_mw=180.0, prod_mw=180.0, load_mw=0.0,
+        renewable_gens=["Wind_K"], dispatchable_gens=["Therm_K", "Hydro_K"], loads=[],
+        report_ratio_max=0.0, is_insensitive=True,
+    )
+
+
+def _downstream_evacuation_discoverer(antennas, gen_pmax=(80.0, 150.0, 30.0, 60.0),
+                                      with_setpoints=True):
+    mock_obs = MockObservation(
+        name_sub=np.array(["Sub0", "Sub1", "Sub2", "K1", "K2"]),
+        name_line=np.array(["L1", "L2", "L3", "L4"]),
+        name_load=np.array(["Load_A"]),
+        name_gen=np.array(["Wind_K", "Therm_K", "Hydro_K", "Therm0"]),
+        line_or_to_subid=np.array([0, 1, 2, 3]),
+        line_ex_to_subid=np.array([1, 2, 3, 4]),
+        rho=np.array([1.2, 0.5, 0.3, 0.1]),   # L1 overloaded at 120%
+        load_to_subid=np.array([2]),
+        gen_to_subid=np.array([3, 3, 4, 0]),
+        load_values=[250.0],
+        gen_values=[-60.0, -100.0, -20.0, -50.0],  # negative = producing
+        gen_energy_sources=["WIND", "THERMAL", "HYDRO", "THERMAL"],
+    )
+    if gen_pmax is not None:
+        mock_obs.gen_pmax = np.array(gen_pmax)
+    if with_setpoints:
+        # Therm_K's slack share: it produces 100 MW for a 102 MW setpoint.
+        mock_obs.gen_target_p = np.array([60.0, 102.0, 20.0, 50.0])
+    mock_env = MockEnv(name_line=list(mock_obs.name_line), name_sub=list(mock_obs.name_sub))
+    mock_g_overflow = MockOverflowGraph(edge_data={
+        (0, 1): {0: {"name": "L1", "capacity": 100.0, "label": "-80"}},
+        (1, 2): {0: {"name": "L2", "capacity": 60.0, "label": "-60"}},
+        (2, 3): {0: {"name": "L3", "capacity": 0.0, "label": "0"}},  # gray antenna feeder
+        (3, 4): {0: {"name": "L4", "capacity": 0.0, "label": "0"}},  # gray, inside
+    })
+    mock_g_dist = MockDistributionGraphWithPath(
+        constrained_edges=["L1", "L2"], aval_nodes=[2], amont_nodes=[0])
+    return ActionDiscoverer(
+        env=mock_env, obs=mock_obs, obs_defaut=mock_obs,
+        classifier=ActionClassifier(MockActionSpace()),
+        timestep=0, lines_defaut=["L1"], lines_overloaded_ids=[0],
+        act_reco_maintenance=MockActionObject(),
+        non_connected_reconnectable_lines=[], all_disconnected_lines=[],
+        dict_action={}, actions_unfiltered=set(), hubs=[],
+        g_overflow=mock_g_overflow, g_distribution_graph=mock_g_dist,
+        simulator_data={}, check_action_simulation=False,
+        structural_antennas=antennas,
+    )
+
+
+def test_downstream_levers_off_leave_the_generator_families_unchanged():
+    with_antenna = _run_generator_families(
+        _downstream_evacuation_discoverer([_downstream_evacuation_antenna()]))
+    without = _run_generator_families(_downstream_evacuation_discoverer([]))
+    for family in ("renewable_curtailment", "redispatch"):
+        on, off = with_antenna.results[family], without.results[family]
+        assert list(on.identified) == list(off.identified)
+        assert on.params == off.params
+    assert list(with_antenna.identified_redispatch) == ["redispatch_Therm0"]
+
+
+def test_downstream_antenna_generators_are_raised_through_the_attachment(
+        evacuation_levers_on):
+    d = _run_generator_families(
+        _downstream_evacuation_discoverer([_downstream_evacuation_antenna()]))
+    for gen_name, target in (("Therm_K", 110.0), ("Hydro_K", 30.0)):
+        params = d.params_redispatch[f"redispatch_{gen_name}"]
+        assert params["direction"] == "up"
+        assert params["node_type"] == "aval"
+        assert params["target_p_MW"] == target  # + the default 10 MW step
+        assert params["influence_ref_substation"] == "Sub2"
+        assert params["influence_factor"] == 0.6
+        assert params["evacuation_antenna_id"] == "EVAC_DOWN_Sub2_1"
+    # Through a downstream antenna, production is only ever raised.
+    assert all(p["direction"] == "up" for p in d.params_redispatch.values()
+               if p.get("evacuation_antenna_id") == "EVAC_DOWN_Sub2_1")
+
+
+def test_downstream_aggregate_raises_within_the_headroom_from_the_setpoints(
+        evacuation_levers_on):
+    """ΔP_req = 35 MW spread over the headroom from the setpoints: Therm_K
+    150 - 102 = 48 MW, Hydro_K 30 - 20 = 10 MW (58 MW in all)."""
+    d = _run_generator_families(
+        _downstream_evacuation_discoverer([_downstream_evacuation_antenna()]))
+    p = d.params_redispatch["redispatch_EVAC_DOWN_Sub2_1"]
+    assert p["direction"] == "up"
+    assert p["node_type"] == "aval"
+    assert p["gen_names"] == ["Hydro_K", "Therm_K"]
+    assert p["mw_required"] == 35.0
+    assert p["headroom_MW"] == 58.0
+    assert p["delta_MW"] == 35.0 and p["applied_MW"] == 35.0
+    # 102 + 48 x 35 / 58 (moved from the setpoint, not from the 100 MW produced)
+    assert p["target_p_MW"] == {"Hydro_K": 26.03, "Therm_K": 130.97}
+    assert d.scores_redispatch["redispatch_EVAC_DOWN_Sub2_1"] == 0.6
+
+
+def test_downstream_aggregate_is_capped_by_the_headroom(evacuation_levers_on):
+    d = _run_generator_families(_downstream_evacuation_discoverer(
+        [_downstream_evacuation_antenna()], gen_pmax=(80.0, 110.0, 30.0, 60.0)))
+    p = d.params_redispatch["redispatch_EVAC_DOWN_Sub2_1"]
+    assert p["applied_MW"] == 18.0                      # 8 + 10 MW of headroom
+    assert p["target_p_MW"] == {"Hydro_K": 30.0, "Therm_K": 110.0}  # both at Pmax
+    assert p["coverage_ratio"] == 0.51                  # 18 / 35
+    assert d.scores_redispatch["redispatch_EVAC_DOWN_Sub2_1"] == 0.31
+
+
+def test_downstream_aggregate_needs_the_units_pmax(evacuation_levers_on):
+    """Without ``gen_pmax`` the headroom is unknown: no aggregate, the unit
+    candidates stay."""
+    d = _run_generator_families(_downstream_evacuation_discoverer(
+        [_downstream_evacuation_antenna()], gen_pmax=None))
+    assert "redispatch_EVAC_DOWN_Sub2_1" not in d.identified_redispatch
+    assert "redispatch_Therm_K" in d.identified_redispatch
+
+
+def test_downstream_aggregate_falls_back_on_the_produced_power(evacuation_levers_on):
+    """Without setpoints (``gen_target_p``) the change starts from the produced
+    power: Therm_K 150 - 100 = 50 MW of headroom."""
+    d = _run_generator_families(_downstream_evacuation_discoverer(
+        [_downstream_evacuation_antenna()], with_setpoints=False))
+    p = d.params_redispatch["redispatch_EVAC_DOWN_Sub2_1"]
+    assert p["headroom_MW"] == 60.0
+    assert p["target_p_MW"] == {"Hydro_K": 25.83, "Therm_K": 129.17}  # x 35 / 60
+
+
+def test_downstream_antenna_is_never_curtailed(evacuation_levers_on):
+    """Curtailing downstream production would aggravate the constraint: the
+    renewable generator of a downstream antenna gets no candidate."""
+    d = _run_generator_families(
+        _downstream_evacuation_discoverer([_downstream_evacuation_antenna()]))
+    assert list(d.identified_renewable_curtailment) == []
+
+
+def test_antenna_tied_to_several_nodes_acts_through_the_best_one(evacuation_levers_on):
+    """An antenna with two attachment nodes takes the score of the better one
+    among those usable: Sub1 (f = 0.8) over Sub2 (f = 0.6) while Sub1 is a
+    raise node, Sub2 otherwise."""
+    import dataclasses
+    antenna = dataclasses.replace(
+        _downstream_evacuation_antenna(), attachment_nodes=[2, 1],
+        attachment_sub_ids=[2, 1], attachment_sub_names=["Sub2", "Sub1"])
+
+    d = _downstream_evacuation_discoverer([antenna])
+    d.find_relevant_redispatch(nodes_up_indices=[1, 2], nodes_down_indices=[0])
+    unit = d.params_redispatch["redispatch_Therm_K"]
+    assert unit["influence_ref_substation"] == "Sub1"
+    assert unit["influence_factor"] == 0.8
+    aggregate = d.params_redispatch["redispatch_EVAC_DOWN_Sub2_1"]
+    assert aggregate["substation"] == aggregate["influence_ref_substation"] == "Sub1"
+    assert aggregate["mw_required"] == 26.25  # 20 x 1.05 / 0.8
+    assert d.scores_redispatch["redispatch_EVAC_DOWN_Sub2_1"] == 0.8
+
+    d = _downstream_evacuation_discoverer([antenna])
+    d.find_relevant_redispatch(nodes_up_indices=[2], nodes_down_indices=[0])
+    assert d.params_redispatch["redispatch_Therm_K"]["influence_ref_substation"] == "Sub2"
+    assert d.params_redispatch["redispatch_EVAC_DOWN_Sub2_1"]["influence_factor"] == 0.6
+
+
+def test_upstream_antenna_is_never_raised(evacuation_levers_on):
+    """Even when its attachment node is also a raise node (e.g. a red-loop
+    hub), an upstream antenna is only lowered."""
+    d = _evacuation_discoverer([_evacuation_antenna()])
+    d.obs_defaut.gen_pmax = np.array([80.0, 30.0, 150.0, 60.0])
+    d.find_relevant_redispatch(nodes_up_indices=[0, 2], nodes_down_indices=[0])
+    assert d.params_redispatch["redispatch_Therm_K"]["direction"] == "down"
+    assert d.params_redispatch["redispatch_EVAC_Sub0_1"]["direction"] == "down"
+    assert not any(action_id.startswith("redispatch_EVAC_DOWN")
+                   for action_id in d.identified_redispatch)

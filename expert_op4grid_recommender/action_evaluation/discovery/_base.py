@@ -66,6 +66,7 @@ class DiscovererBase:
         obs_linecut: Optional[Any] = None,
         antenna_mode: bool = False,
         antenna_meta: Optional[Dict] = None,
+        structural_antennas: Optional[List[Any]] = None,
     ):
         """
         Initializes the ActionDiscoverer with the necessary context and parameters.
@@ -97,6 +98,9 @@ class DiscovererBase:
                          (the N-2 state). Used in disconnection scoring to determine whether a
                          disconnection creates new overloads. When None, the disconnection scoring
                          falls back to the unconstrained regime (no upper redispatch bound).
+            structural_antennas: ``StructuralAntenna`` list detected by step 2. The
+                         injection families use the evacuation ones as levers when
+                         ``config.EVACUATION_ANTENNA_LEVERS`` is on.
         """
         self.env = env
         self.obs = obs
@@ -108,6 +112,7 @@ class DiscovererBase:
         # actions are skipped (see OrchestratorMixin.discover_and_prioritize).
         self.antenna_mode = antenna_mode
         self.antenna_meta = antenna_meta
+        self.structural_antennas = list(structural_antennas or [])
         self.action_space = env.action_space
         self.timestep = timestep
         self.lines_defaut = lines_defaut
@@ -470,6 +475,27 @@ class DiscovererBase:
                     result[sub_id] = dispatchable
         self._cached_subs_with_dispatchable_gens = result
         return result
+
+    def _get_evacuation_antennas_by_sub(
+        self, antenna_type: str = "evacuation"
+    ) -> Dict[int, Any]:
+        """Cached ``{substation_id: StructuralAntenna}`` over the substations of
+        the antennas of one type: ``"evacuation"`` (upstream) or
+        ``"evacuation_downstream"``.
+
+        Empty unless ``config.EVACUATION_ANTENNA_LEVERS`` is on, so the injection
+        families behave exactly as before by default
+        (docs/recommender/evacuation_antennas.md, phase 4)."""
+        if not hasattr(self, "_cached_evacuation_antennas_by_sub"):
+            by_type: Dict[str, Dict[int, Any]] = {}
+            if config.EVACUATION_ANTENNA_LEVERS:
+                for antenna in self.structural_antennas:
+                    if antenna.attachment_sub_ids:
+                        subs = by_type.setdefault(antenna.antenna_type, {})
+                        for sub_id in antenna.sub_ids:
+                            subs[int(sub_id)] = antenna
+            self._cached_evacuation_antennas_by_sub = by_type
+        return self._cached_evacuation_antennas_by_sub.get(antenna_type, {})
 
     def _get_voltage_level_metadata(self) -> Dict[int, Tuple[str, float]]:
         """Cached ``{node_idx: (site_id, nominal_v_kV)}``.

@@ -131,12 +131,13 @@ class PypowsyblObservation:
         # load arrays and the per-component load below.
         loads_full = net.get_loads()[['p', 'q', 'bus_id']]
         loads_df = loads_full[['p', 'q']].reindex(nm.name_load)
-        gens_df = net.get_generators()[['p', 'q', 'energy_source']].reindex(nm.name_gen)
+        gens_df = net.get_generators()[['p', 'q', 'energy_source', 'target_p']].reindex(nm.name_gen)
         self._load_p = loads_df['p'].fillna(0.0).values
         self._load_q = loads_df['q'].fillna(0.0).values
         self._gen_p = gens_df['p'].fillna(0.0).values
         self._gen_q = gens_df['q'].fillna(0.0).values
         self._gen_type = gens_df['energy_source'].fillna("UNKNOWN").values
+        self._gen_target_p = gens_df['target_p'].values.astype(float)
 
         # Connected components and main component load - reuse bus_data_df
         # (fetched once above) instead of re-calling get_buses() twice.
@@ -424,6 +425,13 @@ class PypowsyblObservation:
         return self._gen_q.copy()
 
     @property
+    def gen_target_p(self) -> np.ndarray:
+        """Active power setpoint of the generators (MW, ``target_p``, production
+        positive). It differs from ``-gen_p`` by the generator's share of the
+        load-flow slack compensation; ``set_gen_p`` actions set it."""
+        return self._gen_target_p.copy()
+
+    @property
     def gen_type(self) -> np.ndarray:
         """Generator type (energy source)."""
         return self._gen_type.copy()
@@ -447,6 +455,11 @@ class PypowsyblObservation:
     def gen_energy_source(self) -> np.ndarray:
         """Array of generator energy source strings (e.g. 'WIND', 'SOLAR', 'THERMAL', ...)."""
         return self._network_manager.gen_energy_source
+
+    @property
+    def gen_pmax(self) -> np.ndarray:
+        """Generator maximum active power (MW), like grid2op's ``gen_pmax``."""
+        return self._network_manager.gen_pmax
 
     @property
     def gen_renewable(self) -> np.ndarray:

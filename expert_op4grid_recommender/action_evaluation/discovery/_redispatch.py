@@ -15,6 +15,11 @@ signed active-power delta instead of forcing the setpoint to 0 MW:
 * **lower** production on generators upstream (amont) of the constrained
   path.
 
+With ``EVACUATION_ANTENNA_LEVERS``, the dispatchable generators of an
+evacuation antenna join through its attachment node, lowered upstream and
+raised downstream, plus one MW-sized change per antenna
+(docs/recommender/evacuation_antennas.md).
+
 The default delta (``REDISPATCH_DEFAULT_DELTA_MW``) is editable downstream
 (Co-Study4Grid); the real target setpoint ``current ± delta`` is encoded in
 the ``set_gen_p`` action so the variation is actually simulated.
@@ -122,6 +127,17 @@ class RedispatchMixin(InjectionDiscoveryBase):
                 )
                 via_higher = False
 
+                # 1b) Evacuation antenna: the production reaches the constraint
+                #     through the antenna's (best) attachment node on the
+                #     constrained path — an upstream antenna when lowering, a
+                #     downstream one when raising.
+                evacuation_antenna = None
+                if ref_idx is None:
+                    ref_idx, evacuation_antenna = self._evacuation_antenna_reference(
+                        sub_id, node_flow_cache, nodes_set,
+                        lambda f: _influence_of(f, direction), direction,
+                    )
+
                 # 2) Antenna: the generator's voltage level is NOT in the
                 #    influence graph — borrow the same site's higher-voltage
                 #    (400/225 kV) busbar if it is in the graph on the right
@@ -214,9 +230,50 @@ class RedispatchMixin(InjectionDiscoveryBase):
                         "influence_ref_substation": ref_name,
                         "via_higher_voltage": via_higher,
                     }
+                    if evacuation_antenna is not None:
+                        params_map[action_id]["via_evacuation_antenna"] = True
+                        params_map[action_id]["evacuation_antenna_id"] = (
+                            evacuation_antenna.antenna_id
+                        )
 
         _process(nodes_up_indices, "up")
         _process(nodes_down_indices, "down")
+
+        # Evacuation antennas: one MW-sized change per antenna, spread pro rata
+        # over its dispatchable generators (unlike the fixed per-generator step
+        # above, sized by what the overload needs) — a cut upstream, a rise
+        # within the units' headroom downstream.
+        for direction, nodes_indices in (("down", nodes_down_indices),
+                                         ("up", nodes_up_indices)):
+            sign = 1.0 if direction == "up" else -1.0
+            for agg in self._evacuation_antenna_aggregates(
+                subs_with_dispatchable, gen_p_array, name_gen_arr, _ctx, node_flow_cache,
+                set(nodes_indices), lambda f, d=direction: _influence_of(f, d), direction,
+            ):
+                action_id = f"redispatch_{agg.antenna.antenna_id}"
+                ref_name = str(name_sub_arr[agg.ref_sub_id])
+                identified[action_id] = self.action_space({"set_gen_p": agg.target_p})
+                scores_map[action_id] = round(agg.score, 2)
+                params_map[action_id] = {
+                    "substation": ref_name,
+                    "node_type": "aval" if direction == "up" else "amont",
+                    "direction": direction,
+                    "gen_names": sorted(agg.gen_p),
+                    "action_mode": "redispatch",
+                    "target_p_MW": {n: round(p, 2) for n, p in sorted(agg.target_p.items())},
+                    "delta_MW": round(sign * agg.applied_mw, 2),
+                    "applied_MW": round(agg.applied_mw, 2),
+                    "influence_factor": round(agg.influence_factor, 2),
+                    "mw_required": round(agg.mw_required, 2),
+                    "gen_p": round(sum(agg.gen_p.values()), 2),
+                    "coverage_ratio": round(agg.coverage_ratio, 2),
+                    "influence_ref_substation": ref_name,
+                    "via_higher_voltage": False,
+                    "via_evacuation_antenna": True,
+                    "evacuation_antenna_id": agg.antenna.antenna_id,
+                }
+                if direction == "up":
+                    params_map[action_id]["headroom_MW"] = round(agg.capacity_mw, 2)
 
         candidates_to_check = (
             self._cap_candidates_for_simulation(identified, scores_map)

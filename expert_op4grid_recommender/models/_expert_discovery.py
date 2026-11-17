@@ -201,6 +201,7 @@ def _run_expert_discovery(context: "AnalysisContext", n_action_max: int = None
             obs_linecut=getattr(overflow_sim, 'obs_linecut', None),
             antenna_mode=antenna_mode,
             antenna_meta=context.get("antenna_meta"),
+            structural_antennas=context.get("structural_antennas"),
         )
 
         prioritized_actions, action_scores = discoverer.discover_and_prioritize(

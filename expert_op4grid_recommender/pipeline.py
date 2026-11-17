@@ -49,6 +49,9 @@ from expert_op4grid_recommender.graph_analysis.antenna_graph import (
     focus_overflow_graph_on_pocket,
 )
 from expert_op4grid_recommender.graph_analysis.structural_antennas import (
+    AMONT,
+    AVAL,
+    EVACUATION_TYPES,
     detect_structural_antennas,
     tag_structural_antennas,
 )
@@ -527,11 +530,13 @@ def _run_antenna_step2_graph(context: AnalysisContext) -> AnalysisContext:
 
 
 def _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defaut) -> List[Any]:
-    """Detect the antennas hanging off the constrained path and tag them on
-    ``g_overflow`` (``docs/recommender/evacuation_antennas.md``), best-effort.
+    """Detect the antennas hanging off both sides of the constrained path and
+    tag them on ``g_overflow`` (``docs/recommender/evacuation_antennas.md``),
+    best-effort.
 
-    Typing and payload only — the recommendations do not use them yet, so a
-    detection failure must never abort the analysis.
+    Typing and payload only — the recommendations use them only through the
+    opt-in ``EVACUATION_ANTENNA_LEVERS``, so a detection failure must never
+    abort the analysis.
     """
     if not config.ENABLE_STRUCTURAL_ANTENNAS:
         return []
@@ -539,6 +544,7 @@ def _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defau
         try:
             antennas = detect_structural_antennas(
                 g_overflow, g_distribution_graph, obs_simu_defaut,
+                sides=(AMONT, AVAL),
                 min_mw=config.STRUCTURAL_ANTENNA_MIN_MW,
                 max_fraction=config.STRUCTURAL_ANTENNA_MAX_FRACTION,
             )
@@ -549,15 +555,14 @@ def _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defau
                 f"{type(exc).__name__}: {exc}"
             )
             return []
-    n_evacuation = sum(a.antenna_type == "evacuation" for a in antennas)
-    print(f"Structural antennas: {len(antennas)} detected, {n_evacuation} evacuation")
-    for antenna in antennas:
-        if antenna.antenna_type == "evacuation":
-            print(
-                f"  {antenna.antenna_id} attached to {antenna.attachment_sub_name}: "
-                f"{len(antenna.nodes)} node(s), export {antenna.export_mw:.0f} MW, "
-                f"max report {antenna.report_ratio_max:.1%}"
-            )
+    evacuation = [a for a in antennas if a.antenna_type in EVACUATION_TYPES]
+    print(f"Structural antennas: {len(antennas)} detected, {len(evacuation)} evacuation")
+    for antenna in evacuation:
+        print(
+            f"  {antenna.antenna_id} attached to {antenna.attachment_sub_name} "
+            f"({antenna.side}): {len(antenna.nodes)} node(s), export "
+            f"{antenna.export_mw:.0f} MW, max report {antenna.report_ratio_max:.1%}"
+        )
     return antennas
 
 

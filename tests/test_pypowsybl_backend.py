@@ -279,6 +279,14 @@ class TestObservation:
         assert len(obs.rho) == nm.n_line
         assert len(obs.line_status) == nm.n_line
     
+    def test_generator_pmax_and_setpoints(self, observation):
+        """``gen_pmax`` / ``gen_target_p`` follow the network's ``max_p`` /
+        ``target_p``, aligned with ``name_gen`` (``set_gen_p`` sets the latter)."""
+        obs, nm, _ = observation
+        gens = nm.network.get_generators().reindex(obs.name_gen)
+        np.testing.assert_allclose(obs.gen_pmax, gens["max_p"])
+        np.testing.assert_allclose(obs.gen_target_p, gens["target_p"])
+
     def test_simulate_method(self, observation):
         """Test the simulate method."""
         obs, nm, action_space = observation
