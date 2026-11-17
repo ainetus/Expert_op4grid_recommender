@@ -189,7 +189,7 @@ expert_op4grid_recommender/
     - `"prioritized_actions"`: `{action_id: {action, description_unitaire, rho_before, rho_after, max_rho, max_rho_line, is_rho_reduction, observation, ...}}`
     - `"action_scores"`: per-type scoring dict (see Data Structures below)
     - `"reassessment_parallelism"`: `{parallel, workers, cores_available, n_actions}` — how the per-action reassessment was parallelised (v0.2.6+)
-    - `"structural_antennas"`: list of dicts — antennas hanging off either side of the constrained path (upstream / downstream evacuation antennas…), typed by step 2; payload only unless `EVACUATION_ANTENNA_LEVERS` (see `docs/recommender/evacuation_antennas.md`)
+    - `"structural_antennas"`: list of dicts — antennas hanging off either side of the constrained path (upstream / downstream evacuation antennas…), typed by step 2; their generators also become curtailment / redispatch candidates through `EVACUATION_ANTENNA_LEVERS` (on by default) (see `docs/recommender/evacuation_antennas.md`)
     - `"prediction_time"` / `"assessment_time"`: per-stage execution times
     - Superposition theorem fields (`virtual_flows`, `delta_theta`, etc.) when available
 
@@ -330,12 +330,12 @@ ENABLE_ANTENNA_RECOMMENDATIONS = True
 ENABLE_STRUCTURAL_ANTENNAS = True
 STRUCTURAL_ANTENNA_MIN_MW = 1.0       # minimum |export| to type an antenna
 STRUCTURAL_ANTENNA_MAX_FRACTION = 0.25  # size cap (share of graph nodes)
-# Evacuation antennas as levers (opt-in): curtailment / redispatch reach the
-# antenna's generators through its (best) attachment node, plus one MW-sized
-# pro-rata option per antenna (curtail_<antenna_id>, redispatch_<antenna_id>).
-# Upstream antennas are lowered; downstream ones only raised (redispatch,
-# within the units' Pmax headroom), never curtailed.
-EVACUATION_ANTENNA_LEVERS = False
+# Evacuation antennas as levers (on by default since 0.3.4): curtailment /
+# redispatch reach the antenna's generators through its (best) attachment node,
+# plus one MW-sized pro-rata option per antenna (curtail_<antenna_id>,
+# redispatch_<antenna_id>). Upstream antennas are lowered; downstream ones only
+# raised (redispatch, within the units' Pmax headroom), never curtailed.
+EVACUATION_ANTENNA_LEVERS = True
 
 # Load shedding parameters (v0.1.9+)
 LOAD_SHEDDING_MARGIN = 0.05         # 5% safety margin on required shedding
@@ -543,13 +543,15 @@ pytest tests/test_ActionClassifier.py::test_specific  # Single test
 > (`in_evacuation_antenna`…) and returned as `AnalysisResult.structural_antennas`
 > (`ENABLE_STRUCTURAL_ANTENNAS`, on). expertop4grid **0.3.4** (now the floor)
 > draws them in the reduced overflow graph, in ochre, and its viewer gains an
-> *Evacuation antennas* layer. Opt-in levers (`EVACUATION_ANTENNA_LEVERS`, off):
-> upstream antennas are curtailed / redispatched down, downstream ones only
-> redispatched up within Pmax, through the best attachment node, plus one
-> MW-sized pro-rata option per antenna. Also: the DC overflow graph measures a
-> DC transfer on the AC base (#128), and the pypowsybl overflow-graph nodes get
-> their real injections (`alphadeesp_node_injections`). Default
-> recommendations unchanged. See `docs/release-notes/v0.3.4.md`.
+> *Evacuation antennas* layer. Levers (`EVACUATION_ANTENNA_LEVERS`, **on by
+> default**): upstream antennas are curtailed / redispatched down, downstream
+> ones only redispatched up within Pmax, through the best attachment node, plus
+> one MW-sized pro-rata option per antenna. Also: the DC overflow graph
+> measures a DC transfer on the AC base (#128), and the pypowsybl
+> overflow-graph nodes get their real injections (`alphadeesp_node_injections`).
+> Default recommendations change only where an evacuation antenna exists
+> (`EVACUATION_ANTENNA_LEVERS=False` restores 0.3.3). See
+> `docs/release-notes/v0.3.4.md`.
 >
 > **v0.3.3 highlights** (maneuver IHM English mode): the maneuver IHM is now
 > **bilingual FR/EN** — a fixed **FR | EN switcher at the top-right** (visible

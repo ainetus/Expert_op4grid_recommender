@@ -47,9 +47,9 @@ Design specs for the corrective action types the recommender proposes.
   structural element, then
   as a recommendation lever. **Phases 0–4 implemented** (detection on both
   sides, typing on the overflow graph, analysis payload, rendering in the
-  reduced overflow graph + viewer layer via expertop4grid 0.3.4, opt-in levers:
-  curtailment / lowering redispatch upstream, raising redispatch downstream);
-  phases 5–7 planned.
+  reduced overflow graph + viewer layer via expertop4grid 0.3.4, levers on by
+  default since 0.3.4: curtailment / lowering redispatch upstream, raising
+  redispatch downstream); phases 5–7 planned.
 - [`recommender/load_shedding.md`](recommender/load_shedding.md) — load shedding
   (downstream consumption reduction) as a corrective action type.
 - [`recommender/renewable_curtailment.md`](recommender/renewable_curtailment.md) —
@@ -103,8 +103,8 @@ Per-version notes (v0.2.2 → v0.3.4). The canonical, continuously updated
 history is [CHANGELOG.md](../CHANGELOG.md). Latest:
 [`release-notes/v0.3.4.md`](release-notes/v0.3.4.md) — **evacuation antennas**:
 detection and typing on the overflow graph, `structural_antennas` payload,
-drawing in the reduced graph (expertop4grid 0.3.4) and opt-in curtailment /
-redispatch levers; plus the DC overflow graph's flow transfer fix and the
+drawing in the reduced graph (expertop4grid 0.3.4) and curtailment /
+redispatch levers, on by default; plus the DC overflow graph's flow transfer fix and the
 pypowsybl node-injection fix. Before it:
 [`release-notes/v0.3.3.md`](release-notes/v0.3.3.md) — maneuver IHM **English
 mode (FR/EN)** with a top-right language switcher, French-canonical front-only

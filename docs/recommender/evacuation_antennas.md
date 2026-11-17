@@ -1,11 +1,12 @@
 # Plan — Antennes d'évacuation : un élément de structure du graphe de report
 
-> **Statut** : plan de conception. **Phases 0, 1, 2 et 4 implémentées** (branche
-> `feat/evacuation-antennas`) : helpers d'injection `utils/injections.py`, correctif
-> d'`antenna_meta` en pypowsybl, détection `graph_analysis/structural_antennas.py` des deux
-> côtés du chemin contraint, typage sur le graphe et payload du pipeline, leviers derrière
-> `EVACUATION_ANTENNA_LEVERS` (coupé par défaut) : écrêtement et redispatch à la baisse en
-> amont, redispatch à la hausse en aval. Phases 3, 5, 6 et 7 à faire.
+> **Statut** : plan de conception. **Phases 0 à 4 livrées en 0.3.4** (#129) : helpers
+> d'injection `utils/injections.py`, correctif d'`antenna_meta` en pypowsybl, détection
+> `graph_analysis/structural_antennas.py` des deux côtés du chemin contraint, typage sur le
+> graphe et payload du pipeline, rendu dans le graphe réduit (expertop4grid 0.3.4), leviers
+> derrière `EVACUATION_ANTENNA_LEVERS`, **actif par défaut depuis 0.3.4** (décision du
+> 2026-11-17, voir la Phase 6) : écrêtement et redispatch à la baisse en amont, redispatch
+> à la hausse en aval. Phases 5 et 7 à faire, Phase 6 en partie.
 > **Date** : 2026-11-16 · base `main` = `ainetus/main` `377301c3` (0.3.3.post3).
 > **Objet** : détecter sur le graphe de report (overflow graph) les antennes latérales
 > raccordées en un point du chemin en contrainte, en amont comme en aval, les typer
@@ -461,8 +462,9 @@ et une antenne aval n'est jamais baissée.
     `evacuation_antenna_id` ;
   - une option agrégée identique à une option unitaire (un seul groupe EnR, coupé
     entièrement) n'est pas émise.
-- Interrupteur : `EVACUATION_ANTENNA_LEVERS = False` jusqu'à la Phase 6. Coupé, les familles
-  sont strictement inchangées (`_get_evacuation_antennas_by_sub` est vide). Seules les
+- Interrupteur : `EVACUATION_ANTENNA_LEVERS`, actif par défaut depuis 0.3.4 (il était coupé
+  jusqu'à la bascule, voir la Phase 6). Coupé, les familles sont strictement inchangées
+  (`_get_evacuation_antennas_by_sub` est vide). Seules les
   antennes d'évacuation servent de levier, jamais une antenne de consommation. Le module de
   découverte reçoit `structural_antennas` du contexte.
 - Tests :
@@ -508,7 +510,22 @@ et une antenne aval n'est jamais baissée.
   existante lors de la réévaluation.
 - `EVACUATION_ANTENNA_ALLOW_OPENING = False` par défaut.
 
-### Phase 6 — Validation et bascule des défauts *(M)*
+### Phase 6 — Validation et bascule des défauts *(M)* — **bascule faite en 0.3.4**
+
+**Bascule.** `EVACUATION_ANTENNA_LEVERS` est actif par défaut depuis 0.3.4 (décision du
+2026-11-17), avant le banc complet ci-dessous. Le premier cas réel la justifie : point figé
+Vendée, défaut `MERLAL62SOULL`, surcharge de `PALLUL41ZGARA`.
+
+- Leviers coupés : aucune action recommandée ne lève la surcharge ; la meilleure laisse
+  ρ 1,03.
+- Leviers actifs : écrêter un des deux groupes de Vent des Îles (`curtail_V.ILEEG1` ou
+  `curtail_V.ILEEG2`), soit la moitié du parc, lève la surcharge (ρ max 0,91). C'est la
+  parade réelle de l'exploitant.
+- L'option agrégée dimensionnée en MW (`curtail_EVAC_SOULLP4_1`, −18 MW) reste juste
+  au-dessus, à ρ 1,03. Cela confirme le besoin de calibrer le dimensionnement (ci-dessous).
+- Surcoût : environ 3 s, sur une analyse de 41 s.
+
+Le banc ci-dessous reste à faire pour mesurer le gain à plus grande échelle.
 
 - Bancs : RTE7000-THT (201 contingences notées), Matpower (901) et un cas réseau complet
   (Dijon). Mesures :
@@ -524,9 +541,9 @@ et une antenne aval n'est jamais baissée.
   le petit réseau de test, 0,28 contre environ 1 % en amont ; sur IEEE 14, 1,0 contre
   environ 0,5 en aval). Si l'écart est systématique, dimensionner sur une sensibilité
   calculée : une simulation par antenne, ou la sensibilité DC de la Phase 7.
-- Si les résultats le justifient, basculer `EVACUATION_ANTENNA_LEVERS = True`. Mettre à jour
-  les release notes, `CHANGELOG.md`, `CLAUDE.md`, et transformer ce document en doc de
-  conception.
+- Bascule `EVACUATION_ANTENNA_LEVERS = True` faite en 0.3.4, avec les release notes,
+  `CHANGELOG.md` et `CLAUDE.md`. Si le banc montre une régression, la remettre à `False`.
+  Reste à transformer ce document en doc de conception.
 
 ### Phase 7 — Extensions *(optionnel)*
 
@@ -552,7 +569,7 @@ et une antenne aval n'est jamais baissée.
 | `ENABLE_STRUCTURAL_ANTENNAS` | `True` | détection, typage et payload (sans effet sur les recommandations) |
 | `STRUCTURAL_ANTENNA_MIN_MW` | `1.0` | export minimal pour typer une antenne |
 | `STRUCTURAL_ANTENNA_MAX_FRACTION` | `0.25` | plafond de taille (part des nœuds du graphe) |
-| `EVACUATION_ANTENNA_LEVERS` | `False`, puis `True` après la Phase 6 | options unitaires (4a) et agrégées (4b) : écrêtement et redispatch ↓ en amont, redispatch ↑ en aval |
+| `EVACUATION_ANTENNA_LEVERS` | `True` depuis 0.3.4 (était `False`) | options unitaires (4a) et agrégées (4b) : écrêtement et redispatch ↓ en amont, redispatch ↑ en aval |
 | `EVACUATION_ANTENNA_ALLOW_OPENING` | `False` | active la Phase 5 |
 | `EVACUATION_ANTENNA_OPENING_MAX_LOAD_MW` | `1.0` | charge maximale îlotée tolérée |
 

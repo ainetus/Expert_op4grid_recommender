@@ -534,9 +534,9 @@ def _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defau
     tag them on ``g_overflow`` (``docs/recommender/evacuation_antennas.md``),
     best-effort.
 
-    Typing and payload only — the recommendations use them only through the
-    opt-in ``EVACUATION_ANTENNA_LEVERS``, so a detection failure must never
-    abort the analysis.
+    Typing and payload — the recommendations use them only through
+    ``EVACUATION_ANTENNA_LEVERS`` (on by default), so a detection failure must
+    never abort the analysis: it only costs the antenna levers.
     """
     if not config.ENABLE_STRUCTURAL_ANTENNAS:
         return []

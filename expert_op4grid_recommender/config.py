@@ -140,9 +140,9 @@ class Settings(BaseSettings):
     # MW-sized candidate per antenna spread pro rata over its generators of
     # that production type. Upstream antennas are lowered (curtailment,
     # downward redispatch); downstream ones are only raised (upward redispatch
-    # within the units' headroom), never curtailed. Off until validated across
-    # environments.
-    EVACUATION_ANTENNA_LEVERS: bool = False
+    # within the units' headroom), never curtailed. On by default since 0.3.4;
+    # needs ENABLE_STRUCTURAL_ANTENNAS (no antenna, no lever).
+    EVACUATION_ANTENNA_LEVERS: bool = True
     DO_SAVE_DATA_FOR_TEST: bool = False
     CHECK_ACTION_SIMULATION: bool = False
     N_PRIORITIZED_ACTIONS: int = Field(default=20, ge=0)

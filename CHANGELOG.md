@@ -13,10 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A minor release on top of `0.3.3.post3` with no breaking API change: **evacuation
 antennas** become a structural element of the overflow graph (detection,
-typing, payload, drawing through expertop4grid 0.3.4) and an opt-in
-recommendation lever (#129). It also carries the DC overflow graph's flow
-transfer fix (#128) and the pypowsybl node-injection fix. With the default
-settings, prioritized actions and scores are unchanged. See
+typing, payload, drawing through expertop4grid 0.3.4) and a recommendation
+lever, on by default (#129). It also carries the DC overflow graph's flow
+transfer fix (#128) and the pypowsybl node-injection fix. Default
+recommendations change only where an evacuation antenna exists: its units
+become curtailment / redispatch candidates
+(`EVACUATION_ANTENNA_LEVERS=False` restores the 0.3.3 families). See
 `docs/release-notes/v0.3.4.md`.
 
 ### Fixed
@@ -79,10 +81,10 @@ settings, prioritized actions and scores are unchanged. See
   `RecommenderInputs.structural_antennas` (objects) and
   `AnalysisResult.structural_antennas` (list of dicts). New config knobs
   `ENABLE_STRUCTURAL_ANTENNAS` (default on), `STRUCTURAL_ANTENNA_MIN_MW`,
-  `STRUCTURAL_ANTENNA_MAX_FRACTION`. Typing and payload only: the prioritized
-  actions and scores are unchanged, guarded by an end-to-end test.
-- **Evacuation antennas as curtailment / redispatch levers (phase 4, opt-in).**
-  With `EVACUATION_ANTENNA_LEVERS` (default off), the generators of an
+  `STRUCTURAL_ANTENNA_MAX_FRACTION`. The typing alone (levers off) leaves the
+  prioritized actions and scores unchanged, guarded by an end-to-end test.
+- **Evacuation antennas as curtailment / redispatch levers (phase 4).**
+  With `EVACUATION_ANTENNA_LEVERS` (on by default), the generators of an
   evacuation antenna — invisible so far, their branches being gray — reach the
   constraint through the antenna's attachment node (the best one when it has
   several): renewables become
@@ -97,8 +99,9 @@ settings, prioritized actions and scores are unchanged. See
   constraint. The aggregates move the generators' setpoints rather than their
   produced power, which also carries their share of the load-flow slack (on
   IEEE 14 that share reversed a 3 MW raise). `PypowsyblObservation` gains
-  `gen_pmax` (grid2op's name) and `gen_target_p` for that. Off by default:
-  the families are unchanged.
+  `gen_pmax` (grid2op's name) and `gen_target_p` for that. On by default
+  since 0.3.4; `EVACUATION_ANTENNA_LEVERS=False` leaves the families as in
+  0.3.3.
 - **Evacuation antennas drawn in the reduced overflow graph (phase 3).**
   Their branches are gray, so the reduced view (`DRAW_ONLY_SIGNIFICANT_EDGES`)
   used to drop them entirely. The drawing is done in ExpertOp4Grid

@@ -692,7 +692,8 @@ def test_discovery_hands_the_antennas_to_the_model_and_the_result(monkeypatch):
 def test_structural_antennas_leave_the_recommendations_unchanged():
     """Non-regression guard: phase 2 only types the antennas. On the pipeline's
     small test grid (pypowsybl), where 5 antennas are detected and tagged, the
-    prioritized actions and every score are the same with and without it."""
+    prioritized actions and every score are the same with and without it once
+    the levers (phase 4, on by default) are off."""
     pytest.importorskip("pypowsybl")
     from expert_op4grid_recommender.backends import Backend
 
@@ -704,6 +705,7 @@ def test_structural_antennas_leave_the_recommendations_unchanged():
                 ENV_NAME="bare_env_small_grid_test",
                 FILE_ACTION_SPACE_DESC="reduced_model_actions_test_pypowsybl.json",
                 ENABLE_STRUCTURAL_ANTENNAS=enabled,
+                EVACUATION_ANTENNA_LEVERS=False,
             )
             results[enabled] = pipeline.run_analysis(
                 analysis_date=None, current_timestep=0,
