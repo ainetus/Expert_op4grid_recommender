@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-17
+
+A minor release on top of `0.3.3.post3` with no breaking API change: **evacuation
+antennas** become a structural element of the overflow graph (detection,
+typing, payload, drawing through expertop4grid 0.3.4) and an opt-in
+recommendation lever (#129). It also carries the DC overflow graph's flow
+transfer fix (#128) and the pypowsybl node-injection fix. With the default
+settings, prioritized actions and scores are unchanged. See
+`docs/release-notes/v0.3.4.md`.
+
 ### Fixed
 
 - **The DC overflow graph (`USE_DC_FOR_OVERFLOW_GRAPH`) now measures a DC

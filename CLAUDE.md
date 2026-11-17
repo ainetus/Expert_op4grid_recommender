@@ -534,8 +534,23 @@ pytest tests/test_ActionClassifier.py::test_specific  # Single test
 
 ## Current Development Status
 
-**Current version**: `0.3.3` (see `CHANGELOG.md` for full history)
+**Current version**: `0.3.4` (see `CHANGELOG.md` for full history)
 
+> **v0.3.4 highlights** (evacuation antennas, #129): parts of the grid tied to
+> the constrained path through a single node (or several when insensitive),
+> whose net production leaves through it, are detected on both sides of the
+> path (`graph_analysis/structural_antennas.py`), typed on the overflow graph
+> (`in_evacuation_antenna`…) and returned as `AnalysisResult.structural_antennas`
+> (`ENABLE_STRUCTURAL_ANTENNAS`, on). expertop4grid **0.3.4** (now the floor)
+> draws them in the reduced overflow graph, in ochre, and its viewer gains an
+> *Evacuation antennas* layer. Opt-in levers (`EVACUATION_ANTENNA_LEVERS`, off):
+> upstream antennas are curtailed / redispatched down, downstream ones only
+> redispatched up within Pmax, through the best attachment node, plus one
+> MW-sized pro-rata option per antenna. Also: the DC overflow graph measures a
+> DC transfer on the AC base (#128), and the pypowsybl overflow-graph nodes get
+> their real injections (`alphadeesp_node_injections`). Default
+> recommendations unchanged. See `docs/release-notes/v0.3.4.md`.
+>
 > **v0.3.3 highlights** (maneuver IHM English mode): the maneuver IHM is now
 > **bilingual FR/EN** — a fixed **FR | EN switcher at the top-right** (visible
 > in every mode: topology view, exploration map, modals) toggles the whole
