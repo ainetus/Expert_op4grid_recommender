@@ -27,6 +27,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observation is already solved in DC, are unchanged.
   `NetworkManager.get_line_p1_array(nan_as_zero=False)` returns NaN for a
   branch without a computed flow.
+- **`antenna_meta` on the pypowsybl backend.** The production and consumption
+  of an islanded pocket read as 0 MW and every pocket was reported
+  `"consumer"`, producer pockets included: `PypowsyblObservation` has no
+  `gen_to_subid` / `load_to_subid`, and a producing generator has a negative
+  `p` there (IIDM receptor convention; IEEE 14: `target_p = 232.4`,
+  `p = -232.4`). New `utils/injections.py` helpers count production positive
+  and locate generators / loads on both backends; `antenna_graph` uses them.
+- **Node injections of the overflow graph (pypowsybl backend).** No node was
+  ever coloured as a production node, and consumption values sat on the wrong
+  nodes. alphaDeesp's `build_nodes` takes one prod / load value per *flagged*
+  substation, in substation order, but `AlphaDeespAdapter._build_topo` (and
+  the islanded-pocket `antenna_graph._build_topo`) gave it a full
+  per-substation array, so every value landed on another node. On top of
+  that, the adapter read the generators' `p` cached when the network was
+  loaded, negative for production. On the Vendée case `MERLAL62SOULL`, the
+  substation of the Vent des Îles offshore park (234 MW) read 0 MW. The new
+  `alphadeesp_node_injections` builds that compact shape from the N-1
+  observation with production counted positive, and both topologies use it.
+  Only the node attributes change (fill colour, `value`, `prod_or_load`, the
+  viewer's production / consumption layers); the analysis does not read them.
+
+### Added
+
+- **Detection of antennas hanging off the constrained path**
+  (`graph_analysis/structural_antennas.py`, phase 1 of
+  `docs/recommender/evacuation_antennas.md`). `detect_structural_antennas`
+  removes one side of the constrained path from the overflow graph (branches in
+  service in N-1 only) and keeps the components tied to it through a single
+  node, or through several when they are insensitive (report below the gray
+  threshold): exporters are typed **evacuation antennas**, upstream (`evacuation`)
+  or downstream (`evacuation_downstream`). Their branches are gray (zero
+  report in DC), so today they are invisible to the structured graph and to
+  the injection levers.
+- **Structural antennas in the analysis (phase 2).** `run_analysis_step2_graph`
+  runs the detection on both sides of the constrained path of the freshly
+  built overflow graph (not in the islanded-pocket case), tags the antennas on
+  it (`antenna_id`,
+  `antenna_type`, `in_evacuation_antenna`, `is_antenna_attachment`) and exposes
+  them as `AnalysisContext.structural_antennas` /
+  `RecommenderInputs.structural_antennas` (objects) and
+  `AnalysisResult.structural_antennas` (list of dicts). New config knobs
+  `ENABLE_STRUCTURAL_ANTENNAS` (default on), `STRUCTURAL_ANTENNA_MIN_MW`,
+  `STRUCTURAL_ANTENNA_MAX_FRACTION`. Typing and payload only: the prioritized
+  actions and scores are unchanged, guarded by an end-to-end test.
+- **Evacuation antennas as curtailment / redispatch levers (phase 4, opt-in).**
+  With `EVACUATION_ANTENNA_LEVERS` (default off), the generators of an
+  evacuation antenna — invisible so far, their branches being gray — reach the
+  constraint through the antenna's attachment node (the best one when it has
+  several): renewables become
+  curtailment candidates, dispatchable units lowering redispatch candidates
+  (`via_evacuation_antenna`, `evacuation_antenna_id` in their params). Each
+  family also adds one MW-sized option per antenna, spread pro rata over its
+  generators of that type in a single multi-generator `set_gen_p`
+  (`curtail_<antenna_id>`, `redispatch_<antenna_id>`). A **downstream**
+  evacuation antenna is only ever raised: upward redispatch through its
+  downstream attachment node, the aggregate being spread over the units'
+  headroom up to their `Pmax` — never curtailment, which would aggravate the
+  constraint. The aggregates move the generators' setpoints rather than their
+  produced power, which also carries their share of the load-flow slack (on
+  IEEE 14 that share reversed a 3 MW raise). `PypowsyblObservation` gains
+  `gen_pmax` (grid2op's name) and `gen_target_p` for that. Off by default:
+  the families are unchanged.
+- **Evacuation antennas drawn in the reduced overflow graph (phase 3).**
+  Their branches are gray, so the reduced view (`DRAW_ONLY_SIGNIFICANT_EDGES`)
+  used to drop them entirely. The drawing is done in ExpertOp4Grid
+  (`OverflowGraphRenderer.prepare_for_plot`, PR ainetus/ExpertOp4Grid#80,
+  released in expertop4grid 0.3.4). The reduced view now
+  keeps the branches flagged `in_evacuation_antenna` and draws them in ochre
+  yellow, with their report label and arrow like any other edge. The
+  interactive viewer gets an **Evacuation antennas** layer to show or hide
+  them. The drawing works on a copy, because alphaDeesp derives the analysis
+  views from the colours. Here, the tagging already stamps the flag.
+
+### Changed
+
+- **Dependency floor `expertop4grid>=0.3.4`** (was `>=0.3.3`;
+  `requirements.txt` pins `0.3.4`): the release whose renderer draws the
+  evacuation antennas. The README's stale `>=0.2.8` is updated too.
 
 ## [0.3.3.post3] - 2026-11-12
 

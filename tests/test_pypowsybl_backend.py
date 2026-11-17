@@ -293,6 +293,14 @@ class TestObservation:
         assert len(obs.rho) == nm.n_line
         assert len(obs.line_status) == nm.n_line
     
+    def test_generator_pmax_and_setpoints(self, observation):
+        """``gen_pmax`` / ``gen_target_p`` follow the network's ``max_p`` /
+        ``target_p``, aligned with ``name_gen`` (``set_gen_p`` sets the latter)."""
+        obs, nm, _ = observation
+        gens = nm.network.get_generators().reindex(obs.name_gen)
+        np.testing.assert_allclose(obs.gen_pmax, gens["max_p"])
+        np.testing.assert_allclose(obs.gen_target_p, gens["target_p"])
+
     def test_simulate_method(self, observation):
         """Test the simulate method."""
         obs, nm, action_space = observation
@@ -410,13 +418,39 @@ class TestOverflowAnalysis:
         sim_dc = OverflowSimulator(nm, obs, use_dc=True)
         assert sim_dc is not None
     
+    def test_overflow_graph_nodes_carry_their_injections(self, overflow_setup):
+        """Each node of the overflow graph reads its own N-1 injection: the
+        generator buses are production nodes (coral), the load buses
+        consumption nodes. alphaDeesp's build_nodes takes one value per flagged
+        substation; a full per-substation array shifted the values onto other
+        nodes, and the receptor sign made production negative."""
+        from alphaDeesp.core.graphsAndPaths import OverFlowGraph
+        from expert_op4grid_recommender.pypowsybl_backend.overflow_analysis import (
+            AlphaDeespAdapter,
+        )
+        from expert_op4grid_recommender.utils.injections import injections_by_sub
+
+        nm, action_space, obs = overflow_setup
+        cut = list(nm.name_line).index("L7-5-0")
+        adapter = AlphaDeespAdapter(obs, action_space, None, {}, ltc=[cut])
+        g = OverFlowGraph(adapter.topo, [cut], adapter.get_dataframe(),
+                          float_precision="%.0f").g
+
+        prod, load = injections_by_sub(obs)
+        for sub, name in enumerate(nm.name_sub):
+            assert float(g.nodes[sub]["value"]) == pytest.approx(prod[sub] - load[sub]), name
+        producing = {nm.name_sub[s] for s in g.nodes if g.nodes[s]["prod_or_load"] == "prod"}
+        assert producing == {"VL1", "VL2", "VL3"}  # the three generator buses
+        assert all(g.nodes[s]["fillcolor"] == "coral" for s in g.nodes
+                   if nm.name_sub[s] in producing)
+
     def test_flow_changes_computation(self, overflow_setup):
         """Test computing flow changes after disconnection."""
         from expert_op4grid_recommender.pypowsybl_backend import OverflowSimulator
-        
+
         nm, action_space, obs = overflow_setup
         sim = OverflowSimulator(nm, obs, use_dc=True)
-        
+
         if nm.n_line > 0:
             first_line = nm.name_line[0]
             df = sim.compute_flow_changes_after_disconnection([first_line])

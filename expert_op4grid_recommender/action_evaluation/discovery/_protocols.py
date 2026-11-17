@@ -51,6 +51,8 @@ class DiscovererProtocol(Protocol):
     classifier: Any
     check_action_simulation: bool
     timestep: int
+    #: antennas hanging off the constrained path (StructuralAntenna list).
+    structural_antennas: List[Any]
 
     # --- Shared cache accessors / helpers on DiscovererBase ---
     def _build_lookup_caches(self) -> None: ...
@@ -65,6 +67,8 @@ class DiscovererProtocol(Protocol):
     def _get_subs_with_renewable_gens(self) -> Dict[int, List[int]]: ...
     def _get_subs_with_dispatchable_gens(self) -> Dict[int, List[int]]: ...
     def _get_site_higher_voltage_map(self) -> Dict[int, Any]: ...
+    def _get_evacuation_antennas_by_sub(self,
+                                        antenna_type: str = "evacuation") -> Dict[int, Any]: ...
     def _cap_candidates_for_simulation(self, identified: Dict[str, Any],
                                        scores_map: Dict[str, float]) -> list: ...
 
@@ -83,5 +87,6 @@ DISCOVERER_REQUIRED_METHODS = (
     "_get_subs_with_renewable_gens",
     "_get_subs_with_dispatchable_gens",
     "_get_site_higher_voltage_map",
+    "_get_evacuation_antennas_by_sub",
     "_cap_candidates_for_simulation",
 )

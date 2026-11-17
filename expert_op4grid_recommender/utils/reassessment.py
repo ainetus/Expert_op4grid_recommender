@@ -620,5 +620,6 @@ def build_recommender_inputs(context: Dict[str, Any]):
         is_pypowsybl=context.get("is_pypowsybl", True),
         fast_mode=context.get("actual_fast_mode", False),
         filtered_candidate_actions=filtered_candidate_actions,
+        structural_antennas=context.get("structural_antennas"),
         _context=context,
     )

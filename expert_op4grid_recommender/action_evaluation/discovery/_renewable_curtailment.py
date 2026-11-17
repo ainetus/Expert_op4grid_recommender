@@ -82,6 +82,10 @@ class RenewableCurtailmentMixin(InjectionDiscoveryBase):
         identified, effective, ineffective = {}, [], []
         scores_map, params_map = {}, {}
 
+        def _influence_of(node_flows):
+            return max(node_flows["neg_in"], node_flows["neg_out"],
+                       node_flows["pos_in"], node_flows["pos_out"])
+
         for sub_id, renewable_gen_ids in subs_with_renewable.items():
             sub_name = str(name_sub_arr[sub_id])
 
@@ -92,6 +96,15 @@ class RenewableCurtailmentMixin(InjectionDiscoveryBase):
                 else None
             )
             via_higher = False
+            # 1b) Upstream evacuation antenna: the production reaches the
+            #     constraint through the antenna's (best) attachment node.
+            #     Never a downstream one: curtailing it would aggravate the
+            #     constraint.
+            evacuation_antenna = None
+            if ref_idx is None:
+                ref_idx, evacuation_antenna = self._evacuation_antenna_reference(
+                    sub_id, node_flow_cache, nodes_set, _influence_of, "down"
+                )
             # 2) Antenna: borrow the same site's higher-voltage busbar.
             if ref_idx is None:
                 best_idx, best_flow = None, 0.0
@@ -177,6 +190,39 @@ class RenewableCurtailmentMixin(InjectionDiscoveryBase):
                     "influence_ref_substation": ref_name,
                     "via_higher_voltage": via_higher,
                 }
+                if evacuation_antenna is not None:
+                    params_map[action_id]["via_evacuation_antenna"] = True
+                    params_map[action_id]["evacuation_antenna_id"] = evacuation_antenna.antenna_id
+
+        # 3) Upstream evacuation antennas: one MW-sized curtailment per
+        #    antenna, spread pro rata over its renewable generators.
+        for agg in self._evacuation_antenna_aggregates(
+            subs_with_renewable, gen_p_array, name_gen_arr, _ctx, node_flow_cache,
+            nodes_set, _influence_of, "down",
+        ):
+            total_p = sum(agg.gen_p.values())
+            if len(agg.gen_p) == 1 and agg.applied_mw >= total_p:
+                continue  # the same action as that generator's own candidate
+            action_id = f"curtail_{agg.antenna.antenna_id}"
+            ref_name = str(name_sub_arr[agg.ref_sub_id])
+            identified[action_id] = self.action_space({"set_gen_p": agg.target_p})
+            scores_map[action_id] = round(agg.score, 2)
+            params_map[action_id] = {
+                "substation": ref_name,
+                "node_type": "amont",
+                "gen_names": sorted(agg.gen_p),
+                "action_mode": "power_reduction",
+                "target_p_MW": {n: round(p, 2) for n, p in sorted(agg.target_p.items())},
+                "reduction_MW": round(agg.applied_mw, 2),
+                "influence_factor": round(agg.influence_factor, 2),
+                "mw_required": round(agg.mw_required, 2),
+                "gen_p": round(total_p, 2),
+                "coverage_ratio": round(agg.coverage_ratio, 2),
+                "influence_ref_substation": ref_name,
+                "via_higher_voltage": False,
+                "via_evacuation_antenna": True,
+                "evacuation_antenna_id": agg.antenna.antenna_id,
+            }
 
         candidates_to_check = (
             self._cap_candidates_for_simulation(identified, scores_map)

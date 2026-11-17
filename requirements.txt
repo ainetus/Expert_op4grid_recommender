@@ -20,7 +20,7 @@ pypowsybl==1.14.0
 # (it broke the CI resolve). It is only needed by the legacy grid2op+pypowsybl
 # "assistant env" bridge; install it manually into a numpy<2 environment if you
 # still need create_pypowsybl_backend(). See docs/release-notes/v0.3.0.md.
-expertop4grid==0.3.3
+expertop4grid==0.3.4
 matplotlib==3.10.7
 pydantic>=2.0
 pydantic-settings>=2.0

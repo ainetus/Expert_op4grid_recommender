@@ -183,6 +183,11 @@ class RecommenderInputs:
     - ``filtered_candidate_actions``      action IDs retained by the expert
                                           rule filter — exposed so downstream
                                           models can sample among them
+    - ``structural_antennas``             antennas hanging off the constrained
+                                          path (``StructuralAntenna`` list,
+                                          e.g. evacuation antennas), also
+                                          tagged on ``overflow_graph`` — see
+                                          docs/recommender/evacuation_antennas.md
     """
 
     obs: Any
@@ -218,6 +223,7 @@ class RecommenderInputs:
     act_reco_maintenance: Any = None
     use_dc: bool = False
     filtered_candidate_actions: Optional[List[str]] = None
+    structural_antennas: Optional[List[Any]] = None
 
     is_pypowsybl: bool = True
     fast_mode: bool = False

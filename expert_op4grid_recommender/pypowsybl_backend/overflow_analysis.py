@@ -21,6 +21,8 @@ import networkx as nx
 from typing import Dict, List, Tuple, Optional, Any, TYPE_CHECKING
 import pypowsybl.loadflow as lf
 
+from expert_op4grid_recommender.utils.injections import alphadeesp_node_injections
+
 if TYPE_CHECKING:
     from .network_manager import NetworkManager
     from .observation import PypowsyblObservation
@@ -965,7 +967,9 @@ class AlphaDeespAdapter:
         - 'nodes': dict with node info including 'are_prods', 'are_loads', 'names',
                    'prods_values', 'loads_values'
 
-        OPTIMIZED: Uses pre-cached data from NetworkManager - no DataFrame calls.
+        The node injections are the observation's (N-1 state), production
+        counted positive, in the compact shape alphaDeesp's ``build_nodes``
+        reads (see ``alphadeesp_node_injections``).
         """
         nm = self._obs._network_manager
 
@@ -973,38 +977,13 @@ class AlphaDeespAdapter:
         idx_or = nm.get_line_or_subid()
         idx_ex = nm.get_line_ex_subid()
 
-        # Initialize arrays for substations
-        n_sub = nm.n_sub
-        are_prods = np.zeros(n_sub, dtype=bool)
-        are_loads = np.zeros(n_sub, dtype=bool)
-        prods_values = np.zeros(n_sub)
-        loads_values = np.zeros(n_sub)
-
-        # OPTIMIZATION: Use pre-cached per-substation element lists
-        # Mark substations that have generators
-        for sub_idx in range(n_sub):
-            gen_indices = nm._gens_per_sub[sub_idx]
-            if gen_indices:
-                are_prods[sub_idx] = True
-                prods_values[sub_idx] = sum(nm._gen_p_values[i] for i in gen_indices)
-
-        # Mark substations that have loads
-        for sub_idx in range(n_sub):
-            load_indices = nm._loads_per_sub[sub_idx]
-            if load_indices:
-                are_loads[sub_idx] = True
-                loads_values[sub_idx] = sum(nm._load_p_values[i] for i in load_indices)
-
         return {
             'edges': {
                 'idx_or': list(idx_or),
                 'idx_ex': list(idx_ex),
             },
             'nodes': {
-                'are_prods': are_prods.tolist(),
-                'are_loads': are_loads.tolist(),
-                'prods_values': prods_values.tolist(),
-                'loads_values': loads_values.tolist(),
+                **alphadeesp_node_injections(self._obs),
                 'names': list(nm.name_sub),
             }
         }

@@ -160,6 +160,44 @@ def test_antenna_meta_producer_direction():
     assert meta["net_mw"] == pytest.approx(140.0)
 
 
+def _as_pypowsybl_obs(obs):
+    """Re-express a fake obs the way ``PypowsyblObservation`` exposes it: no
+    ``gen_to_subid`` / ``load_to_subid`` (only ``get_obj_connect_to``) and a
+    producing generator reported with a negative ``p``."""
+    gen_sub, load_sub = list(obs.gen_to_subid), list(obs.load_to_subid)
+
+    def get_obj_connect_to(substation_id):
+        return {
+            "generators_id": [i for i, s in enumerate(gen_sub) if s == substation_id],
+            "loads_id": [i for i, s in enumerate(load_sub) if s == substation_id],
+            "lines_or_id": [], "lines_ex_id": [],
+        }
+
+    fields = {k: v for k, v in vars(obs).items()
+              if k not in ("gen_to_subid", "load_to_subid")}
+    fields["gen_p"] = -np.asarray(obs.gen_p, dtype=float)
+    return types.SimpleNamespace(**fields, get_obj_connect_to=get_obj_connect_to,
+                                 _network_manager=object())
+
+
+@pytest.mark.parametrize("antenna_prod, direction, prod_mw, net_mw", [
+    (None, "consumer", 0.0, -60.0),
+    ((2, 200.0), "producer", 200.0, 140.0),
+])
+def test_antenna_meta_pypowsybl_convention(antenna_prod, direction, prod_mw, net_mw):
+    """pypowsybl observation: the pocket's prod/load are still found and signed
+    (they used to read 0 MW, and every pocket came out ``"consumer"``)."""
+    obs = _as_pypowsybl_obs(_make_obs(antenna_prod=antenna_prod))
+    ctx = extract_antenna_context(obs, [list(obs.name_line).index("CONSTRAINT")])
+    *_, meta = build_antenna_overflow_graph(
+        obs, ctx["constraint_line_id"], ctx["antenna_sub_ids"], ctx["root_sub_id"])
+
+    assert meta["direction"] == direction
+    assert meta["total_prod_mw"] == pytest.approx(prod_mw)
+    assert meta["total_load_mw"] == pytest.approx(60.0)
+    assert meta["net_mw"] == pytest.approx(net_mw)
+
+
 def _make_exporting_obs():
     """A pocket that EXPORTS power up to the main grid (amont-islanded case).
 
@@ -395,17 +433,21 @@ def test_islanded_line_mask_marks_pocket_incident_lines_only():
 
 
 def test_build_topo_aggregates_prod_and_load_per_substation():
-    """topo['nodes'] carries per-substation prod/load over the full grid."""
+    """topo['nodes'] flags every substation and carries one prod / load value
+    per flagged one, in substation order (what alphaDeesp's build_nodes reads)."""
     obs = _make_obs(antenna_prod=(2, 200.0))  # 200 MW generation on sub 2
     topo = _build_topo(obs)
+    nodes = topo["nodes"]
 
-    assert len(topo["nodes"]["are_prods"]) == len(obs.name_sub)
+    assert len(nodes["are_prods"]) == len(obs.name_sub)
     assert len(topo["edges"]["idx_or"]) == len(obs.name_line)
+    producing = [s for s, flag in enumerate(nodes["are_prods"]) if flag]
+    consuming = [s for s, flag in enumerate(nodes["are_loads"]) if flag]
+    assert len(nodes["prods_values"]) == len(producing)
+    assert len(nodes["loads_values"]) == len(consuming)
     # Sub 2 has both the 200 MW generator and a 30 MW load.
-    assert topo["nodes"]["are_prods"][2] is True
-    assert topo["nodes"]["prods_values"][2] == pytest.approx(200.0)
-    assert topo["nodes"]["are_loads"][2] is True
-    assert topo["nodes"]["loads_values"][2] == pytest.approx(30.0)
+    assert nodes["prods_values"][producing.index(2)] == pytest.approx(200.0)
+    assert nodes["loads_values"][consuming.index(2)] == pytest.approx(30.0)
     # Original (pre-swap) line orientation is preserved in the topo edges.
     assert topo["edges"]["idx_or"] == [int(s) for s in obs.line_or_to_subid]
     assert topo["edges"]["idx_ex"] == [int(s) for s in obs.line_ex_to_subid]

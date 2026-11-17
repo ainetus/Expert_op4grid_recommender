@@ -48,6 +48,13 @@ from expert_op4grid_recommender.graph_analysis.antenna_graph import (
     build_antenna_overflow_graph,
     focus_overflow_graph_on_pocket,
 )
+from expert_op4grid_recommender.graph_analysis.structural_antennas import (
+    AMONT,
+    AVAL,
+    EVACUATION_TYPES,
+    detect_structural_antennas,
+    tag_structural_antennas,
+)
 from expert_op4grid_recommender.graph_analysis.visualization import (
     make_overflow_graph_visualization,
     get_graph_file_name,
@@ -117,6 +124,10 @@ class AnalysisContext(DictCompatMixin):
     g_distribution_graph: Any = None
     node_name_mapping: Any = None
     antenna_meta: Any = None
+    # Antennas hanging off the constrained path (``StructuralAntenna`` list),
+    # also tagged on ``g_overflow``; empty in the islanded-pocket case or when
+    # ``ENABLE_STRUCTURAL_ANTENNAS`` is off.
+    structural_antennas: Optional[List[Any]] = None
     use_dc: bool = False
 
     # --- populated lazily by the expert filter / reassessment --------------
@@ -139,6 +150,7 @@ class AnalysisResult(DictCompatMixin):
     pre_existing_overloads: list = field(default_factory=list)
     combined_actions: dict = field(default_factory=dict)
     antenna_meta: Any = None
+    structural_antennas: List[dict] = field(default_factory=list)
     prediction_time: Any = None
     assessment_time: Any = None
     reassessment_parallelism: Any = None
@@ -511,9 +523,47 @@ def _run_antenna_step2_graph(context: AnalysisContext) -> AnalysisContext:
         "g_distribution_graph": g_distribution_graph,
         "node_name_mapping": node_name_mapping,
         "antenna_meta": antenna_meta,
+        "structural_antennas": [],  # the pocket graph has no constrained path to hang off
         "use_dc": False,
     })
     return context
+
+
+def _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defaut) -> List[Any]:
+    """Detect the antennas hanging off both sides of the constrained path and
+    tag them on ``g_overflow`` (``docs/recommender/evacuation_antennas.md``),
+    best-effort.
+
+    Typing and payload only — the recommendations use them only through the
+    opt-in ``EVACUATION_ANTENNA_LEVERS``, so a detection failure must never
+    abort the analysis.
+    """
+    if not config.ENABLE_STRUCTURAL_ANTENNAS:
+        return []
+    with Timer("Structural Antenna Detection"):
+        try:
+            antennas = detect_structural_antennas(
+                g_overflow, g_distribution_graph, obs_simu_defaut,
+                sides=(AMONT, AVAL),
+                min_mw=config.STRUCTURAL_ANTENNA_MIN_MW,
+                max_fraction=config.STRUCTURAL_ANTENNA_MAX_FRACTION,
+            )
+            tag_structural_antennas(g_overflow, antennas)
+        except Exception as exc:
+            print(
+                "Structural antenna detection failed (continuing without it): "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return []
+    evacuation = [a for a in antennas if a.antenna_type in EVACUATION_TYPES]
+    print(f"Structural antennas: {len(antennas)} detected, {len(evacuation)} evacuation")
+    for antenna in evacuation:
+        print(
+            f"  {antenna.antenna_id} attached to {antenna.attachment_sub_name} "
+            f"({antenna.side}): {len(antenna.nodes)} node(s), export "
+            f"{antenna.export_mw:.0f} MW, max report {antenna.report_ratio_max:.1%}"
+        )
+    return antennas
 
 
 def run_analysis_step2_graph(context: AnalysisContext) -> AnalysisContext:
@@ -558,6 +608,10 @@ def run_analysis_step2_graph(context: AnalysisContext) -> AnalysisContext:
             current_timestep, do_consolidate_graph=config.DO_CONSOLIDATE_GRAPH, use_dc=use_dc,
             extra_lines_to_cut_ids=extra_lines_to_cut_ids,
         )
+
+    # On the freshly built graph: before rendering, and before discovery
+    # relabels its nodes (the tags survive the relabelling).
+    structural_antennas = _detect_structural_antennas(g_overflow, g_distribution_graph, obs_simu_defaut)
 
     if config.DO_VISUALIZATION:
         with Timer("Visualization"):
@@ -623,6 +677,7 @@ def run_analysis_step2_graph(context: AnalysisContext) -> AnalysisContext:
         "hubs": hubs,
         "g_distribution_graph": g_distribution_graph,
         "node_name_mapping": node_name_mapping,
+        "structural_antennas": structural_antennas,
         "use_dc": use_dc,
     })
     return context
@@ -702,6 +757,10 @@ def run_analysis_step2_discovery(context: AnalysisContext,
         # disconnected radial pocket and its net direction so callers can flag
         # it to the operator. ``None`` for the regular path.
         antenna_meta=context.get("antenna_meta"),
+        # Antennas hanging off the constrained path, typed by step 2 (payload
+        # only — the recommendations do not use them yet). Empty when step 2
+        # did not run the detection (islanded pocket, feature disabled).
+        structural_antennas=[a.to_dict() for a in context.get("structural_antennas") or []],
         # Per-stage execution times (seconds). ``prediction_time`` is the
         # model's intrinsic recommend() call; ``assessment_time`` is the
         # re-simulation + combined-pair estimation that scales with the number

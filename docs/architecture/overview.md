@@ -305,6 +305,7 @@ Docs : [`module.md`](../manoeuvre/module.md) ·
 | `combined_actions` | meilleures **paires** estimées par superposition (`rho_after`, `beta`…) |
 | `pre_existing_overloads` | surcharges pré-existantes exclues de l'analyse N-1 |
 | `antenna_meta` | (mode antenne) description de la poche îlotée : sous-stations, MW prod/conso/net, direction |
+| `structural_antennas` | antennes accrochées au chemin contraint (antennes d'évacuation…), typées à l'étape 2 : raccordement, lignes, export, groupes, ratio de report (liste de dicts ; vide en mode poche) |
 | `prediction_time`, `assessment_time` | découpage des temps (recommandation vs ré-évaluation) |
 
 ---

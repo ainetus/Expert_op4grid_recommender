@@ -121,6 +121,28 @@ class Settings(BaseSettings):
     # curtailment / redispatch) on it. Topological actions are filtered out for
     # this case. Set to False to restore the legacy "no solution" early return.
     ENABLE_ANTENNA_RECOMMENDATIONS: bool = True
+    # Structural antennas (docs/recommender/evacuation_antennas.md): parts of
+    # the grid tied to the constrained path through a single node (or several
+    # when insensitive to the overload), detected on both sides of it once the
+    # overflow graph is built (not in the islanded-pocket case) and typed on it
+    # — "evacuation" / "evacuation_downstream" for an upstream / downstream
+    # antenna that exports power. Typing and payload only: the levers are
+    # EVACUATION_ANTENNA_LEVERS.
+    ENABLE_STRUCTURAL_ANTENNAS: bool = True
+    # Minimum |export| (MW) at the attachment node to type an antenna.
+    STRUCTURAL_ANTENNA_MIN_MW: float = Field(default=1.0, ge=0.0)
+    # A component holding more than this share of the graph nodes is not an
+    # antenna (guard against a whole region hanging off a single node).
+    STRUCTURAL_ANTENNA_MAX_FRACTION: float = Field(default=0.25, gt=0.0, le=1.0)
+    # Evacuation antennas as levers: the renewable curtailment and redispatch
+    # families reach the generators of an evacuation antenna through its
+    # attachment node (one candidate per generator), and each family adds one
+    # MW-sized candidate per antenna spread pro rata over its generators of
+    # that production type. Upstream antennas are lowered (curtailment,
+    # downward redispatch); downstream ones are only raised (upward redispatch
+    # within the units' headroom), never curtailed. Off until validated across
+    # environments.
+    EVACUATION_ANTENNA_LEVERS: bool = False
     DO_SAVE_DATA_FOR_TEST: bool = False
     CHECK_ACTION_SIMULATION: bool = False
     N_PRIORITIZED_ACTIONS: int = Field(default=20, ge=0)

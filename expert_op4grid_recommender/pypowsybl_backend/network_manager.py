@@ -182,10 +182,12 @@ class NetworkManager:
         self._n_gen = len(self._gen_ids)
         self._gen_name_to_idx = {name: idx for idx, name in enumerate(self._gen_ids)}
 
-        # Cache generator -> substation mapping, power values, and energy source
+        # Cache generator -> substation mapping, power values, energy source and
+        # maximum active power (NaN when unknown)
         self._gen_to_sub = {}
         self._gen_p_values = np.zeros(self._n_gen)
         self._gen_energy_source = np.array(["OTHER"] * self._n_gen, dtype=object)
+        self._gen_max_p = np.full(self._n_gen, np.nan)
         if len(self._cached_gen_df) > 0:
             if 'voltage_level_id' in self._cached_gen_df.columns:
                 self._gen_to_sub = self._cached_gen_df['voltage_level_id'].to_dict()
@@ -194,6 +196,8 @@ class NetworkManager:
                 self._gen_p_values = np.where(np.isnan(p_arr), 0.0, p_arr)
             if 'energy_source' in self._cached_gen_df.columns:
                 self._gen_energy_source = self._cached_gen_df['energy_source'].fillna('OTHER').values.astype(object)
+            if 'max_p' in self._cached_gen_df.columns:
+                self._gen_max_p = self._cached_gen_df['max_p'].values.astype(float)
 
         # Loads - cache DataFrame for reuse
         self._cached_load_df = self.network.get_loads()
@@ -340,6 +344,11 @@ class NetworkManager:
     def gen_energy_source(self) -> np.ndarray:
         """Array of generator energy source strings (e.g. 'WIND', 'SOLAR', 'THERMAL', ...)."""
         return self._gen_energy_source.copy()
+
+    @property
+    def gen_pmax(self) -> np.ndarray:
+        """Array of generator maximum active power (MW, ``max_p``); NaN when unknown."""
+        return self._gen_max_p.copy()
 
     @property
     def name_load(self) -> np.ndarray:

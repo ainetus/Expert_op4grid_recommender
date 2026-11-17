@@ -88,6 +88,9 @@ MIXIN_EXPECTED_METHODS: dict[type, set[str]] = {
     InjectionDiscoveryBase: {
         "_injection_overload_context",
         "_injection_influence_factor",
+        "_evacuation_antenna_attachment",
+        "_evacuation_antenna_reference",
+        "_evacuation_antenna_aggregates",
     },
     OrchestratorMixin: {"discover_and_prioritize"},
     NodeSplittingMixin: {
@@ -115,6 +118,7 @@ BASE_SHARED_HELPERS: set[str] = {
     "_get_subs_with_dispatchable_gens",
     "_get_voltage_level_metadata",
     "_get_site_higher_voltage_map",
+    "_get_evacuation_antennas_by_sub",
     "_build_node_flow_cache",
     "_build_active_edges_cache",
     "_get_active_edges_between_cached",
@@ -255,8 +259,8 @@ def test_no_method_is_defined_in_two_places():
 
 
 def test_method_count_matches_original_class():
-    """Sanity check: the new package distributes exactly 53 methods
-    across the base + mixins. The base contributes ``__init__`` plus 32
+    """Sanity check: the new package distributes exactly 57 methods
+    across the base + mixins. The base contributes ``__init__`` plus 33
     helpers (the original 24 plus ``_get_subs_with_dispatchable_gens``,
     ``_get_voltage_level_metadata`` and ``_get_site_higher_voltage_map``
     added for redispatching, ``_cap_candidates_for_simulation`` that
@@ -268,10 +272,13 @@ def test_method_count_matches_original_class():
     ``_release_simulation_baseline`` that frees the shared baseline's retained
     variant at the end of the run (R4), and ``_get_disconnection_bounds`` that
     memoises the disconnection/PST flow bounds once per run, replacing the
-    order-sensitive ``_disco_bounds`` del/lazy protocol (R5); the nine mixins
-    together contribute the remaining 18 family methods
-    (1 + 2 + 8 + 2 + 1 + 1 + 1 + 1 + 1), and InjectionDiscoveryBase adds 2 shared
-    injection helpers. The FamilyResult @property bridges and the injection
+    order-sensitive ``_disco_bounds`` del/lazy protocol (R5), and
+    ``_get_evacuation_antennas_by_sub`` that indexes the evacuation antennas
+    used as levers); the nine mixins together contribute the remaining 18
+    family methods (1 + 2 + 8 + 2 + 1 + 1 + 1 + 1 + 1), and
+    InjectionDiscoveryBase adds 5 shared injection helpers (2 for the overload
+    preamble, 3 for the evacuation-antenna levers). The FamilyResult @property
+    bridges and the injection
     MARGIN_KEY / MIN_MW_KEY class constants are excluded by
     ``_class_defined_methods`` (they are data, not methods)."""
     non_dunder = sum(
@@ -280,13 +287,13 @@ def test_method_count_matches_original_class():
     )
     # _class_defined_methods filters out dunder names, so __init__ is
     # excluded from the per-class counts. Add it back explicitly to get
-    # the full 53 (42 original + redispatch mixin + 3 redispatch helpers +
+    # the full 57 (42 original + redispatch mixin + 3 redispatch helpers +
     # the candidate-simulation cap helper + the shared baseline helper +
     # the shared-baseline topological-check helper + _get_disconnection_bounds
     # + InjectionDiscoveryBase's 2 shared injection helpers (R5) + the baseline
-    # release helper (R4)).
+    # release helper (R4) + the 4 evacuation-antenna lever helpers).
     assert "__init__" in DiscovererBase.__dict__
-    assert non_dunder + 1 == 53
+    assert non_dunder + 1 == 57
 
 
 # ---------------------------------------------------------------------------
