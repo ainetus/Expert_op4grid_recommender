@@ -77,6 +77,20 @@ class TestNetworkManager:
         result_dc = nm.run_load_flow(dc=True)
         assert result_dc is not None
 
+    def test_line_p1_array_of_an_open_line(self, sample_network):
+        """An open line reads 0 by default, NaN on request."""
+        from expert_op4grid_recommender.pypowsybl_backend import NetworkManager
+
+        nm = NetworkManager(network=sample_network)
+        idx = list(nm.name_line).index("L7-5-0")
+        nm.disconnect_lines_batch(["L7-5-0"])
+        nm.run_load_flow(dc=True)
+
+        assert nm.get_line_p1_array()[idx] == 0.0
+        flows = nm.get_line_p1_array(nan_as_zero=False)
+        assert np.isnan(flows[idx])
+        assert np.isfinite(np.delete(flows, idx)).all()
+
 
 class TestActionSpace:
     """Tests for ActionSpace class."""
@@ -445,6 +459,78 @@ class TestOverflowAnalysis:
             assert 'line_name' in df.columns
             assert 'delta_flows' in df.columns
             assert len(df) == nm.n_line
+
+    @pytest.mark.parametrize("with_rho", [True, False])
+    def test_dc_graph_on_ac_observation_applies_the_dc_transfer(self, overflow_setup, with_rho):
+        """A DC graph on an AC observation measures the cut as a DC flow
+        transfer applied on the AC base flows. Comparing DC post-cut flows to
+        the AC base flows directly would put the AC/DC gap (losses, slack
+        distribution) on every branch."""
+        from expert_op4grid_recommender.pypowsybl_backend import OverflowSimulator
+
+        nm, action_space, obs = overflow_setup
+        cut = "L7-5-0"  # on the 4-5-7-8-9-6 ring: the grid stays connected
+        sim = OverflowSimulator(nm, obs, use_dc=True)
+        if with_rho:
+            df, _ = sim.compute_flow_changes_and_rho([cut], obs._thermal_limits)
+        else:
+            df = sim.compute_flow_changes_after_disconnection([cut])
+        df = df.set_index("line_name")
+
+        # The generator step-up transformers are radial: in DC, cutting a ring
+        # line moves no injection, so their flow does not change.
+        for trafo in ("T4-1-0", "T7-2-0", "T9-3-0"):
+            assert df.loc[trafo, "delta_flows"] == pytest.approx(0.0, abs=1e-6)
+
+        dc_before, dc_after = _dc_flows_across_cut(nm, cut)
+        expected = np.asarray(obs.p_or, dtype=float) + dc_after - dc_before
+        expected[list(nm.name_line).index(cut)] = 0.0
+        new_flows = np.where(df["swapped"], -df["new_flows"], df["new_flows"])
+        np.testing.assert_allclose(new_flows, expected, atol=1e-6)
+
+    def test_dc_graph_on_dc_observation_solves_the_cut_once(self, overflow_setup, monkeypatch):
+        """An observation already solved in DC (USE_DC_LOAD_FLOW) is a
+        consistent base: no extra DC solve of the N-1 state."""
+        from expert_op4grid_recommender.pypowsybl_backend import (
+            OverflowSimulator, PypowsyblObservation
+        )
+
+        nm, action_space, _ = overflow_setup
+        nm._default_dc = True
+        nm.run_load_flow()
+        obs = PypowsyblObservation(nm, action_space)
+        sim = OverflowSimulator(nm, obs, use_dc=True)
+
+        solves = []
+        run_load_flow = nm.run_load_flow
+
+        def counting_run_load_flow(*args, **kwargs):
+            solves.append(kwargs.get("dc"))
+            return run_load_flow(*args, **kwargs)
+
+        monkeypatch.setattr(nm, "run_load_flow", counting_run_load_flow)
+        df = sim.compute_flow_changes_after_disconnection(["L7-5-0"]).set_index("line_name")
+
+        assert solves == [True]
+        for trafo in ("T4-1-0", "T7-2-0", "T9-3-0"):
+            assert df.loc[trafo, "delta_flows"] == pytest.approx(0.0, abs=1e-6)
+
+
+def _dc_flows_across_cut(nm, line):
+    """DC flows (``name_line`` order) of the base variant before and after
+    opening ``line``."""
+    nm.create_variant("dc_flows_across_cut")
+    nm.set_working_variant("dc_flows_across_cut")
+    try:
+        nm.run_load_flow(dc=True)
+        before = nm.get_line_p1_array()
+        nm.disconnect_lines_batch([line])
+        nm.run_load_flow(dc=True)
+        after = nm.get_line_p1_array()
+    finally:
+        nm.set_working_variant(nm.base_variant_id)
+        nm.remove_variant("dc_flows_across_cut")
+    return before, after
 
 
 class TestSwitchAction:

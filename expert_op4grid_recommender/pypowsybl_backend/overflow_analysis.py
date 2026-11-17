@@ -39,7 +39,9 @@ class OverflowSimulator:
         This replaces alphaDeesp's Grid2opSimulation for overflow graph building.
     
     Attributes:
-        use_dc: If True, uses DC load flow. If False, uses AC load flow.
+        use_dc: If True, uses DC load flow. If False, uses AC load flow. On an
+            observation solved in AC, the DC cut is applied as a flow transfer
+            on the AC base flows (see ``_solve_after_cut``).
         fast_mode: If True, uses fast mode for load flow (tap-changer control in
             AFTER_GENERATOR_VOLTAGE_CONTROL mode — same currents, ~6-7x fewer iters).
     """
@@ -66,7 +68,16 @@ class OverflowSimulator:
         self._use_dc = use_dc
         self._param_options = param_options or {}
         self._fast_mode = fast_mode
-        
+
+        # The base flows below come from the observation. When the graph runs
+        # in DC on an AC observation (USE_DC_FOR_OVERFLOW_GRAPH alone), DC
+        # post-cut flows cannot be compared to them: the difference would carry
+        # the whole AC/DC gap (losses, slack distribution) on every branch. The
+        # cut is then measured as a DC flow transfer, against a DC solve of the
+        # same N-1 state, and applied on the AC base flows. An observation
+        # already solved in DC (USE_DC_LOAD_FLOW, divergence fallback) needs none.
+        self._dc_transfer = use_dc and not network_manager._default_dc
+
         # Get current line flows FROM THE OBSERVATION (not network)
         # This ensures we have the correct base flows even if the observation
         # was captured at a different network state
@@ -109,7 +120,42 @@ class OverflowSimulator:
     def _run_load_flow(self) -> lf.ComponentResult:
         """Run load flow with configured mode (AC or DC) and fast optimization."""
         return self._nm.run_load_flow(dc=self._use_dc, fast=self._fast_mode)
-    
+
+    def _solve_after_cut(self, already_disconnected: List[str],
+                         lines_to_disconnect: List[str]) -> Tuple[bool, np.ndarray]:
+        """Open the observation's open lines and the lines to cut on the working
+        variant, solve it, and return ``(converged, p1 per branch)``.
+
+        With a DC flow transfer (see ``__init__``), the N-1 state is first solved
+        in DC, before the cut. The flows returned are then the AC base flows
+        plus the change of the DC flows across the cut, and a branch left
+        without flow after the cut reads 0.
+        """
+        n_lines = len(self._nm.name_line)
+        to_cut = list(already_disconnected) + list(lines_to_disconnect)
+        dc_base = None
+        if self._dc_transfer:
+            if already_disconnected:
+                self._nm.disconnect_lines_batch(list(already_disconnected))
+            base = self._run_load_flow()
+            if base is None or base.status != lf.ComponentStatus.CONVERGED:
+                return False, np.zeros(n_lines)
+            dc_base = np.nan_to_num(self._nm.get_line_p1_array(nan_as_zero=False))
+            to_cut = list(lines_to_disconnect)
+
+        # Batch disconnect instead of a loop
+        if to_cut:
+            self._nm.disconnect_lines_batch(to_cut)
+        result = self._run_load_flow()
+        if result is None or result.status != lf.ComponentStatus.CONVERGED:
+            return False, np.zeros(n_lines)
+        if dc_base is None:
+            return True, self._nm.get_line_p1_array()
+
+        dc_cut = self._nm.get_line_p1_array(nan_as_zero=False)
+        ac_base = np.nan_to_num(np.asarray(self._base_flows_arr, dtype=float))
+        return True, np.where(np.isnan(dc_cut), 0.0, ac_base + dc_cut - dc_base)
+
     def _get_line_flows(self) -> Dict[str, float]:
         """Get active power flows for all lines (MW at terminal 1)."""
         lines_df = self._net.get_lines()[['p1']]
@@ -246,24 +292,16 @@ class OverflowSimulator:
             disconnected_indices = np.where(disconnected_mask)[0]
             already_disconnected = [line_names[i] for i in disconnected_indices]
 
-            # Combine all lines to disconnect and use batch operation
-            all_lines_to_disconnect = already_disconnected + list(lines_to_disconnect)
-            if all_lines_to_disconnect:
-                self._nm.disconnect_lines_batch(all_lines_to_disconnect)
+            # Solve the post-cut state ONCE for both DataFrame and rho computation
+            converged, new_flows_arr = self._solve_after_cut(already_disconnected,
+                                                             lines_to_disconnect)
 
-            # Run load flow ONCE for both DataFrame and rho computation
-            result = self._run_load_flow()
-            converged = (result is not None and result.status == lf.ComponentStatus.CONVERGED)
-
-            # ===== Extract data for BOTH outputs from this single load flow =====
+            # ===== Extract data for BOTH outputs from this single solve =====
 
             if converged:
-                # Get p1 array for DataFrame
-                new_flows_arr = self._nm.get_line_p1_array()
                 # Get currents for rho computation
                 i1_arr, i2_arr = self._nm.get_line_currents_array()
             else:
-                new_flows_arr = np.zeros(n_lines)
                 i1_arr = np.zeros(n_lines)
                 i2_arr = np.zeros(n_lines)
 
@@ -337,8 +375,9 @@ class OverflowSimulator:
             from expert_op4grid_recommender.config import MAX_RHO_BOTH_EXTREMITIES
 
             # In DC the load flow does not populate branch currents (i1/i2 = 0),
-            # so derive them from the DC active-power flow — otherwise the
-            # overflow-graph rho collapses to 0 and no line reads as overloaded.
+            # so derive them from the post-cut active-power flow (DC, or AC base
+            # + DC transfer) — otherwise the overflow-graph rho collapses to 0
+            # and no line reads as overloaded.
             if self._use_dc:
                 i_dc = self._dc_currents_from_power(new_flows_arr)
                 i1_arr = i_dc
@@ -408,28 +447,12 @@ class OverflowSimulator:
             line_status = self._obs.line_status
             disconnected_mask = ~line_status
 
-            # OPTIMIZATION: Use batch disconnect instead of loop
             disconnected_indices = np.where(disconnected_mask)[0]
             already_disconnected = [line_names[i] for i in disconnected_indices]
 
-            # Combine all lines to disconnect and use batch operation
-            all_lines_to_disconnect = already_disconnected + list(lines_to_disconnect)
-            if all_lines_to_disconnect:
-                self._nm.disconnect_lines_batch(all_lines_to_disconnect)
-
-            # Run load flow after disconnecting all lines at once
-            result = self._run_load_flow()
-
-            converged = (result is not None and result.status == lf.ComponentStatus.CONVERGED)
-
             # Get new flows (signed values, like alphaDeesp's cut_lines_and_recomputes_flows)
-            n_lines = len(line_names)
-
-            if converged:
-                # OPTIMIZATION: Use vectorized array getter instead of loop
-                new_flows_arr = self._nm.get_line_p1_array()
-            else:
-                new_flows_arr = np.zeros(n_lines)
+            _converged, new_flows_arr = self._solve_after_cut(already_disconnected,
+                                                              lines_to_disconnect)
 
             # ===== STEP 1: Build initial arrays (vectorized) =====
             # Use pre-cached indices from NetworkManager

@@ -722,9 +722,13 @@ class NetworkManager:
                 connected2=[False] * len(trafos_to_disconnect)
             )
 
-    def get_line_p1_array(self) -> np.ndarray:
+    def get_line_p1_array(self, nan_as_zero: bool = True) -> np.ndarray:
         """
         Get active power at terminal 1 for all lines as a numpy array.
+
+        Args:
+            nan_as_zero: If True (default), a branch without a computed flow
+                (open, or outside the solved component) reads 0; if False, NaN.
 
         Returns:
             Array of p1 values in the same order as _line_ids
@@ -734,7 +738,8 @@ class NetworkManager:
 
         # Build result array
         n_lines = len(self._line_ids)
-        result = np.zeros(n_lines)
+        missing = 0.0 if nan_as_zero else np.nan
+        result = np.full(n_lines, missing)
 
         # Extract p1 as dicts
         lines_p1 = lines_df['p1'].to_dict()
@@ -744,10 +749,10 @@ class NetworkManager:
         for line_id, idx in self._line_id_to_arr_idx.items():
             if line_id in lines_p1:
                 p1 = lines_p1[line_id]
-                result[idx] = p1 if not np.isnan(p1) else 0.0
+                result[idx] = p1 if not np.isnan(p1) else missing
             elif line_id in trafos_p1:
                 p1 = trafos_p1[line_id]
-                result[idx] = p1 if not np.isnan(p1) else 0.0
+                result[idx] = p1 if not np.isnan(p1) else missing
 
         return result
 

@@ -24,7 +24,8 @@ docs/
   the pypowsybl simulation pipeline: AC/DC & fast/slow load-flow modes, voltage
   initialisation, variant lifecycle (kept-variant registry + LRU backstop), the
   unified backend simulation seam + `BaselineContext` (R4), thermal-limit
-  hypotheses, retry branches.
+  hypotheses, retry branches, and the DC overflow graph's flow transfer on the
+  AC base (§ 3.8).
 - [`architecture/configuration.md`](architecture/configuration.md) — the pydantic
   `Settings` single source of truth (R3): computed derived paths, the
   `get_settings()` / `override_settings()` / `reset_settings()` accessors, the
