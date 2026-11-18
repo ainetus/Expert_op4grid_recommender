@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4.post1] - 2026-11-18
+
 ### Fixed
 
 - **The per-action reassessment no longer copies the network when that does
@@ -25,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`_MIN_ACTIONS_PER_WORKER`), so realistic action counts stay serial. On
   that case parallel only broke even at 6 actions per worker (24 actions on 4
   workers: 23.4 s against 24.0 s); on the small test grid, whose per-action
-  work is Python-bound, it never did.
+  work is Python-bound, it never did (#131).
 
 ### Added
 
@@ -34,10 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cgroup limit minus the usage. The copies may take half of it, at an
   estimated 160x the network's binary size plus 64 MB each (~1.25 GB for full
   France). When the cap brings the pool below the gate, the reassessment
-  runs serially.
+  runs serially (#131).
 - **`REASSESSMENT_MAX_WORKERS`** (default 10, env
   `EXPERT_OP4GRID_REASSESSMENT_MAX_WORKERS`) caps the worker threads, i.e.
-  the network copies held at once; `1` keeps the reassessment serial.
+  the network copies held at once; `1` keeps the reassessment serial (#131).
 
 ## [0.3.4] - 2026-11-17
 
