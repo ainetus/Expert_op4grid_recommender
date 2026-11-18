@@ -476,6 +476,27 @@ reassessment runs serially. The copies outlive the reassessment: each
 action's observation keeps the copy it was simulated on, so they are held as
 long as the analysis result.
 
+**Why private copies, not one shared network.** One network whose variants
+are solved concurrently would need no copy. pypowsybl can load a network with
+`allow_variant_multi_thread_access=True`, and `lf.run_ac_async(network,
+variant_id=…)` then solves its variants on Java threads, bit-identically. On
+France, 15 line-outage variants with the pipeline's slow-mode parameters took
+13.2 s one after the other, 4.1 s four at a time and 2.5 s all at once.
+pypowsybl 1.15 rules this out here, for two reasons:
+
+- The flag can only be set when the network is loaded.
+- On such a network, a Python thread other than the main one cannot work.
+  Each of its native calls runs on a fresh Java thread, so the working variant
+  set by `set_working_variant` is gone by the next call ("Variant index not
+  set for current thread").
+
+Co-Study4Grid runs both analysis steps in Starlette's threadpool, so neither
+a flagged main network nor a flagged copy can be driven from there. Without
+the flag, `run_ac_async` races on the global working variant and returns
+wrong currents. The design becomes possible if pypowsybl keeps its isolate
+thread attached for the life of a Python thread, or takes a variant id on its
+getters and updaters.
+
 ## 7. Thermal limits & overload calculation
 
 ### 7.1 Sources
