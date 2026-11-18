@@ -482,13 +482,15 @@ are solved concurrently would need no copy. pypowsybl can load a network with
 variant_id=…)` then solves its variants on Java threads, bit-identically. On
 France, 15 line-outage variants with the pipeline's slow-mode parameters took
 13.2 s one after the other, 4.1 s four at a time and 2.5 s all at once.
-pypowsybl 1.15 rules this out here, for two reasons:
+pypowsybl rules this out here, up to 1.16.1 (the latest release) and its main
+branch as of November 2026, for two reasons:
 
 - The flag can only be set when the network is loaded.
 - On such a network, a Python thread other than the main one cannot work.
-  Each of its native calls runs on a fresh Java thread, so the working variant
-  set by `set_working_variant` is gone by the next call ("Variant index not
-  set for current thread").
+  Each of its native calls runs on a fresh Java thread (`GraalVmGuard` attaches
+  the thread to the GraalVM isolate for the call and detaches it after), so
+  the working variant set by `set_working_variant` is gone by the next call
+  ("Variant index not set for current thread").
 
 Co-Study4Grid runs both analysis steps in Starlette's threadpool, so neither
 a flagged main network nor a flagged copy can be driven from there. Without
