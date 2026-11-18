@@ -434,19 +434,47 @@ So a caller can force fast mode for an entire analysis run, or rely
 on the global default (`config.PYPOWSYBL_FAST_MODE`, default `True` since
 v0.3.0.post1 — fast mode is accuracy-preserving, see § 3.3).
 
-**Reassessment parallelism is fast-mode aware (since v0.3.0.post1).** The
-per-action reassessment (`utils/reassessment.py`) can re-simulate the
-prioritized actions across worker threads, each on a private cloned network
-built via a fresh `SimulationEnvironment` (whose `_ensure_valid_state` baseline
-LF also runs in fast mode — ~4.6 s → ~0.7 s per worker). But that per-worker
-clone + baseline tax (~9 s on the France grid) is only amortized by *expensive*
-per-action LFs. Because fast mode makes them cheap, `_should_parallelize_reassessment`
-stays **serial** in auto mode until `n_actions >= workers *
-_FAST_MODE_MIN_ACTIONS_PER_WORKER` (6) — so the France `P.SAOL31RONCI`
-15-action case runs serial (~21 s, ~1.4 s/action) instead of paying the clone
-tax. Slow mode and the explicit `REASSESSMENT_PARALLEL=True` force are
-unchanged; the container-aware core gate (`REASSESSMENT_MIN_PARALLEL_CORES` /
-`EXPERT_OP4GRID_MIN_PARALLEL_REASSESS_WORKERS`) still applies first.
+**Reassessment parallelism only runs when it pays.** The per-action
+reassessment (`utils/reassessment.py`) can re-simulate the prioritized actions
+across worker threads, each on a private copy of the network. Before its first
+action, that path pays a tax the serial path never pays: the N-1 variant is
+serialised to a binary buffer on one thread, then every worker loads its copy,
+builds a fresh `SimulationEnvironment` (whose `_ensure_valid_state` baseline LF
+runs in fast mode since v0.3.0.post1 — ~4.6 s → ~0.7 s per worker) and its
+baseline observation. Measured on the full-France grid (Vendée case
+`MERLAL62SOULL`, ~1 s per action in fast and slow mode alike, 20-core host):
+
+| Reassessment, 15 actions | Time | Peak RSS |
+|---|---|---|
+| serial | 14.9 s | 2.95 GB |
+| 2 workers | 22.0 s | 4.97 GB |
+| 4 workers | 20.0 s | 8.0 GB |
+| 10 workers | 25.1 s | 9.2 GB |
+
+The buffer takes 7.5-8.5 s, the copies 5.7 s (2 workers) to 13-15 s (10:
+they load concurrently but contend), and every LF slows down 1.1x (2 workers)
+to 2.8x (10). Parallel lost at every count this case produces (up to 21
+prioritized actions) and only broke even at 6 actions per worker: 24 actions
+on 4 workers took 23.4 s against 24.0 s serially, with an 8.8 GB peak against
+3.4 GB. On the small test grid the per-action work is Python-bound (GIL), and
+parallel never broke even (28 actions: 0.67 s serial, 0.73-2.0 s parallel). So, in auto mode, `_should_parallelize_reassessment` engages the
+pool only when it reaches the container-aware core threshold
+(`REASSESSMENT_MIN_PARALLEL_CORES` / `EXPERT_OP4GRID_MIN_PARALLEL_REASSESS_WORKERS`)
+**and** every worker gets at least `_MIN_ACTIONS_PER_WORKER` (6) actions, in
+fast and slow mode alike (until 0.3.4 this second rule applied in fast mode
+only, so a slow-mode analysis on a many-core host always took the 10-worker
+path). Realistic action counts (10-20) therefore stay serial.
+
+The pool is also capped, forced (`REASSESSMENT_PARALLEL=True`) or not, by
+`REASSESSMENT_MAX_WORKERS` (default 10, `1` = always serial) and by the
+available memory: `_available_memory_bytes` reads `MemAvailable` and, in a
+container, the cgroup limit minus the usage; the copies may take half of it,
+at `_estimate_worker_memory_bytes` each: 160x the binary buffer plus 64 MB.
+The binary format is compact: France serialises to 7.5 MB but costs 0.7-1.25 GB
+per worker, which the estimate puts at ~1.25 GB. When that cap brings the pool below the gate, the
+reassessment runs serially. The copies outlive the reassessment: each
+action's observation keeps the copy it was simulated on, so they are held as
+long as the analysis result.
 
 ## 7. Thermal limits & overload calculation
 
@@ -524,8 +552,10 @@ overload is counted as "worsening". An action that lifts
 - `expert_op4grid_recommender/main.py:run_analysis` — `actual_fast_mode`
   resolution; pipeline-level `fast_mode` propagation.
 - `expert_op4grid_recommender/utils/reassessment.py` —
-  `_should_parallelize_reassessment` (fast-mode-aware serial gate),
-  `_FAST_MODE_MIN_ACTIONS_PER_WORKER`.
+  `_should_parallelize_reassessment` (core + actions-per-worker gate),
+  `_MIN_ACTIONS_PER_WORKER`, `_memory_worker_cap` /
+  `_available_memory_bytes` (memory cap), `_max_reassessment_workers`
+  (`REASSESSMENT_MAX_WORKERS`).
 - `docs/release-notes/v0.2.2.post2.md` — rationale for the
   outer-loop cap bump and the non-converged-status fallback.
 - `docs/release-notes/v0.3.0.post1.md` — fast mode = AFTER_GENERATOR tap
@@ -533,6 +563,8 @@ overload is counted as "worsening". An action that lifts
 - `tests/test_initial_lf_voltage_init_mode.py` — guards
   `_ensure_valid_state` seed.
 - `tests/test_reassessment_parallel_gate.py` — guards the parallel/serial
-  gate incl. the fast-mode cases.
+  gate, the actions-per-worker rule, `REASSESSMENT_MAX_WORKERS` and the
+  memory cap end to end; `tests/test_reassessment_parallelism.py` — the
+  container-aware CPU and memory detection.
 - `tests/test_lf_fallback_non_converged.py` — guards the four retry
   branches and the bumped outer-loop default.

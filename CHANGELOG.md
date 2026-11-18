@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The per-action reassessment no longer copies the network when that does
+  not pay.** In auto mode (`REASSESSMENT_PARALLEL=None`) and slow mode
+  (`PYPOWSYBL_FAST_MODE=False`), the reassessment ran on
+  `min(10, cores, actions)` workers as soon as the host had 4 effective
+  cores: the actions-per-worker gate only applied in fast mode. Each worker
+  loads a private copy of the network, after the N-1 variant is serialised
+  (7.5-8.5 s on full France). On the Vendée case `MERLAL62SOULL` (15
+  actions, 20-core host), the 10 workers took 25 s and peaked at 9.2 GB,
+  against 15 s and 3 GB serially, and the copies stay alive with the result:
+  each action's observation keeps the copy it was simulated on. Auto mode
+  now needs at least 6 actions per worker in slow mode as in fast mode
+  (`_MIN_ACTIONS_PER_WORKER`), so realistic action counts stay serial. On
+  that case parallel only broke even at 6 actions per worker (24 actions on 4
+  workers: 23.4 s against 24.0 s); on the small test grid, whose per-action
+  work is Python-bound, it never did.
+
+### Added
+
+- **Memory cap on the reassessment pool.** Forced or not, the workers are
+  capped by the available memory: `MemAvailable` or, in a container, the
+  cgroup limit minus the usage. The copies may take half of it, at an
+  estimated 160x the network's binary size plus 64 MB each (~1.25 GB for full
+  France). When the cap brings the pool below the gate, the reassessment
+  runs serially.
+- **`REASSESSMENT_MAX_WORKERS`** (default 10, env
+  `EXPERT_OP4GRID_REASSESSMENT_MAX_WORKERS`) caps the worker threads, i.e.
+  the network copies held at once; `1` keeps the reassessment serial.
+
 ## [0.3.4] - 2026-11-17
 
 A minor release on top of `0.3.3.post3` with no breaking API change: **evacuation

@@ -299,9 +299,15 @@ PYPOWSYBL_FAST_MODE = False         # disable voltage control for speed
 # Reassessment parallelism (v0.2.9+) — the per-action reassessment clones a
 # full pypowsybl network per worker, so on a CPU-limited container it over-
 # subscribes the CPU and is slower than serial. Detection is container-aware
-# (cgroup CPU quota + affinity), not os.cpu_count().
+# (cgroup CPU quota + affinity), not os.cpu_count(). Auto mode also needs
+# >= 6 actions per worker, in slow mode as in fast mode (unreleased): on full
+# France, 15 actions on 10 workers took 25 s / 9.2 GB vs 15 s / 3 GB serially.
+# The pool is capped by REASSESSMENT_MAX_WORKERS and by the available memory
+# (MemAvailable or cgroup headroom; the copies may take half of it, ~1.25 GB
+# each for full France), forced or not.
 REASSESSMENT_PARALLEL = None        # None=auto, True=force parallel, False=force serial
 REASSESSMENT_MIN_PARALLEL_CORES = 4 # auto mode: min effective cores to parallelise
+REASSESSMENT_MAX_WORKERS = 10       # cap on workers = network copies in memory (1 = serial)
 
 # Minimum prioritized actions per type (v0.1.3+ / v0.1.9+ / v0.2.x)
 MIN_LINE_RECONNECTIONS = 0
