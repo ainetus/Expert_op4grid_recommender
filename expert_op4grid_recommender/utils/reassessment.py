@@ -31,7 +31,9 @@ from expert_op4grid_recommender.utils.helpers import Timer
 
 logger = logging.getLogger(__name__)
 
-#: Hard cap on reassessment worker threads (see ``_reassessment_worker_count``).
+#: Default cap on reassessment worker threads, i.e. on private network copies
+#: (see ``_reassessment_worker_count``). The ``REASSESSMENT_MAX_WORKERS``
+#: config knob (env ``EXPERT_OP4GRID_REASSESSMENT_MAX_WORKERS``) overrides it.
 _MAX_REASSESSMENT_WORKERS = 10
 
 #: cgroup control files that expose a container CPU quota (module-level so
@@ -39,6 +41,18 @@ _MAX_REASSESSMENT_WORKERS = 10
 _CGROUP_V2_CPU_MAX = "/sys/fs/cgroup/cpu.max"
 _CGROUP_V1_CPU_QUOTA = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
 _CGROUP_V1_CPU_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
+
+#: Host and cgroup memory files read by ``_available_memory_bytes`` (same
+#: fixture convention as the CPU ones above).
+_PROC_MEMINFO = "/proc/meminfo"
+_CGROUP_V2_MEMORY_MAX = "/sys/fs/cgroup/memory.max"
+_CGROUP_V2_MEMORY_CURRENT = "/sys/fs/cgroup/memory.current"
+_CGROUP_V1_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+_CGROUP_V1_MEMORY_USAGE = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+
+#: cgroup v1 reports "no limit" as a page-aligned ``LLONG_MAX``; anything at or
+#: above this is treated as unlimited.
+_CGROUP_V1_UNLIMITED = 1 << 60
 
 
 def _read_cgroup_cpu_quota() -> Optional[float]:
@@ -93,6 +107,60 @@ def _effective_cpu_count() -> int:
     if quota is not None:
         candidates.append(max(1, int(quota)))
     return max(1, min(candidates))
+
+
+def _read_cgroup_memory_headroom() -> Optional[int]:
+    """Return the cgroup memory limit minus the current usage in bytes, or ``None``.
+
+    Reads cgroup v2 (``memory.max`` / ``memory.current``) first, then cgroup v1
+    (``memory.limit_in_bytes`` / ``memory.usage_in_bytes``). Returns ``None``
+    when no limit is set or the files are unreadable (e.g. outside a
+    container). The usage includes the page cache, so the headroom errs low.
+    """
+    # cgroup v2 — memory.max == "max" means unlimited.
+    try:
+        with open(_CGROUP_V2_MEMORY_MAX, encoding="ascii") as fh:
+            raw = fh.read().strip()
+        if raw != "max":
+            with open(_CGROUP_V2_MEMORY_CURRENT, encoding="ascii") as fh:
+                return max(0, int(raw) - int(fh.read().strip()))
+    except (OSError, ValueError):
+        pass
+    # cgroup v1 — an unlimited limit reads as a page-aligned LLONG_MAX.
+    try:
+        with open(_CGROUP_V1_MEMORY_LIMIT, encoding="ascii") as fh:
+            limit = int(fh.read().strip())
+        if limit < _CGROUP_V1_UNLIMITED:
+            with open(_CGROUP_V1_MEMORY_USAGE, encoding="ascii") as fh:
+                return max(0, limit - int(fh.read().strip()))
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _available_memory_bytes() -> Optional[int]:
+    """Best-effort memory still available to this process, in bytes.
+
+    Like :func:`os.cpu_count`, ``/proc/meminfo`` describes the *host* inside a
+    container, so we take the minimum of its ``MemAvailable`` and the cgroup
+    headroom. Returns ``None`` when neither is readable (e.g. non-Linux); the
+    memory then does not cap the reassessment pool.
+    """
+    candidates = []
+    try:
+        with open(_PROC_MEMINFO, encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    candidates.append(int(line.split()[1]) * 1024)
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    headroom = _read_cgroup_memory_headroom()
+    if headroom is not None:
+        candidates.append(headroom)
+    return min(candidates) if candidates else None
+
+
 #: Default minimum worker count below which the parallel reassessment is NOT
 #: worth it. The parallel path clones the whole network per worker
 #: (``save``/``load_from_binary_buffer`` + ``SimulationEnvironment`` + obs
@@ -107,15 +175,37 @@ _DEFAULT_MIN_PARALLEL_WORKERS = 4
 #: over the ``REASSESSMENT_MIN_PARALLEL_CORES`` config knob.
 _MIN_PARALLEL_WORKERS_ENV = "EXPERT_OP4GRID_MIN_PARALLEL_REASSESS_WORKERS"
 
-#: In fast mode, each per-action LF is cheap (AFTER_GENERATOR tap control,
-#: ~1.4 s incl. the observation build vs ~6 s in slow mode), so the fixed
-#: per-worker parallel tax — a full private-network clone + a baseline LF,
-#: ~9 s on the France grid — is not amortized unless each worker runs at least
-#: this many actions. Below it the serial path (which reuses the main network,
-#: paying neither clone nor per-worker baseline) is faster. Derived from
-#: tax/per-action ≈ 9/1.4 ≈ 6, so realistic prioritized-action counts (10-15
-#: over 4-10 workers) stay serial in fast mode. Slow mode is unaffected.
-_FAST_MODE_MIN_ACTIONS_PER_WORKER = 6
+#: Auto mode parallelises only when every worker re-simulates at least this
+#: many actions, in fast and slow mode alike (it was fast mode only until
+#: 0.3.4). Before its first action, the parallel path pays a tax the serial
+#: path never pays: it serialises the N-1 network to a binary buffer on one
+#: thread, then every worker loads a private copy, builds a
+#: ``SimulationEnvironment`` and solves a baseline LF. On the full-France grid
+#: (Vendée case ``MERLAL62SOULL``, ~1 s per action in fast and slow mode) that
+#: tax is 7.5-8.5 s for the buffer plus 5.7 s (2 workers) to 13-15 s (10
+#: workers: the copies load concurrently but contend), and the per-action LFs
+#: slow down 1.1x (2 workers) to 2.8x (10). 15 actions on 10 workers took 25 s
+#: instead of 15 s serially, with a 9.2 GB peak instead of 3 GB, and 24
+#: actions on 4 workers (6 each) only broke even: 23.4 s against 24.0 s. On
+#: the small test grid the per-action work is Python-bound (GIL) and parallel
+#: never broke even. Realistic prioritized-action counts (10-20) thus stay
+#: serial on 4 workers or more.
+_MIN_ACTIONS_PER_WORKER = 6
+
+#: Memory one worker costs, estimated from the size of the binary buffer its
+#: network copy is loaded from: a multiple of the buffer (the in-memory
+#: network, the worker's ``SimulationEnvironment`` and observations, and the
+#: loader's garbage until the next collection) plus a fixed part. The binary
+#: format is compact: full France serialises to 7.5 MB but costs 0.7-1.25 GB
+#: per worker (peak-RSS growth), the small test grid 0.13 MB and 50-75 MB. The
+#: estimate gives ~1.25 GB and ~85 MB.
+_WORKER_MEMORY_PER_BUFFER_BYTE = 160
+_WORKER_MEMORY_FIXED_BYTES = 64 * 1024 ** 2
+
+#: Share of the available memory the worker copies may take. The copies
+#: outlive the reassessment: each action's observation keeps the network copy
+#: it was simulated on, so they live as long as the analysis result.
+_WORKER_MEMORY_BUDGET = 0.5
 
 
 def _min_parallel_workers() -> int:
@@ -138,25 +228,29 @@ def _min_parallel_workers() -> int:
                               _DEFAULT_MIN_PARALLEL_WORKERS)))
 
 
+def _max_reassessment_workers() -> int:
+    """Cap on the pool size from the ``REASSESSMENT_MAX_WORKERS`` knob.
+
+    Floored at 1, which keeps the reassessment serial whatever the other knobs
+    say.
+    """
+    return max(1, int(getattr(config, "REASSESSMENT_MAX_WORKERS",
+                              _MAX_REASSESSMENT_WORKERS)))
+
+
 def _should_parallelize_reassessment(is_pypowsybl: bool, workers: int,
-                                     n_actions: int,
-                                     fast_mode: bool = False) -> bool:
-    """Whether to run the reassessment in parallel.
+                                     n_actions: int) -> bool:
+    """Whether to run the reassessment in parallel on ``workers`` workers.
 
     ``workers`` is the container-aware pool size from
-    :func:`_reassessment_worker_count`. The ``REASSESSMENT_PARALLEL`` config
-    knob forces the decision (``True`` = parallel when ≥2 workers, ``False`` =
-    serial); in the default ``None`` (auto) mode parallel is engaged only above
-    a core threshold — below it the per-worker network-clone overhead makes it
-    slower than the serial path (see :data:`_DEFAULT_MIN_PARALLEL_WORKERS` /
-    :func:`_min_parallel_workers`).
-
-    ``fast_mode`` additionally suppresses auto-mode parallelism for realistic
-    action counts: when the per-action LFs are cheap (AFTER_GENERATOR tap
-    control) the fixed per-worker clone + baseline-LF tax dominates unless a
-    worker runs many actions, so auto mode stays serial until
-    ``n_actions >= workers * _FAST_MODE_MIN_ACTIONS_PER_WORKER``. The explicit
-    ``REASSESSMENT_PARALLEL=True`` force still overrides this.
+    :func:`_reassessment_worker_count`, possibly lowered by the memory cap
+    (:func:`_memory_worker_cap`). The ``REASSESSMENT_PARALLEL`` config knob
+    forces the decision (``True`` = parallel when ≥2 workers, ``False`` =
+    serial). In the default ``None`` (auto) mode parallel is engaged only when
+    the pool reaches the core threshold (:data:`_DEFAULT_MIN_PARALLEL_WORKERS`
+    / :func:`_min_parallel_workers`) AND every worker gets at least
+    :data:`_MIN_ACTIONS_PER_WORKER` actions, in fast and slow mode alike. Below
+    either, the per-worker network copy makes it slower than the serial path.
     """
     if not is_pypowsybl or n_actions < 2:
         return False
@@ -165,9 +259,7 @@ def _should_parallelize_reassessment(is_pypowsybl: bool, workers: int,
         return bool(force) and workers >= 2
     if workers < _min_parallel_workers():
         return False
-    if fast_mode:
-        return n_actions >= workers * _FAST_MODE_MIN_ACTIONS_PER_WORKER
-    return True
+    return n_actions >= workers * _MIN_ACTIONS_PER_WORKER
 
 
 def _reassessment_worker_count(n_actions: int) -> Tuple[int, int]:
@@ -175,18 +267,41 @@ def _reassessment_worker_count(n_actions: int) -> Tuple[int, int]:
 
     ``effective_cores`` is **container-aware** (respects the cgroup CPU quota
     and scheduler affinity), unlike :func:`os.cpu_count`. ``workers`` is the raw
-    pool size ``min(10, effective_cores, n_actions)``; whether to actually run
-    with more than one worker is decided by
-    :func:`_should_parallelize_reassessment` (the ``REASSESSMENT_PARALLEL`` force
-    knob + the ``REASSESSMENT_MIN_PARALLEL_CORES`` / env threshold). Every worker
-    clones a full private pypowsybl network, so on a CPU-starved host (e.g. a
-    2-vCPU cloud container) parallel over-subscribes the CPU *and* pays that
-    per-worker clone tax — measurably SLOWER than a serial re-simulation, which
-    is exactly what the gate guards against.
+    pool size ``min(REASSESSMENT_MAX_WORKERS, effective_cores, n_actions)``
+    (default cap 10); whether to actually run with more than one worker is
+    decided by :func:`_should_parallelize_reassessment` (the
+    ``REASSESSMENT_PARALLEL`` force knob, the ``REASSESSMENT_MIN_PARALLEL_CORES``
+    / env threshold and the actions-per-worker gate), and the available memory
+    lowers it once the network size is known (:func:`_memory_worker_cap`).
+    Every worker clones a full private pypowsybl network, so on a CPU-starved
+    host (e.g. a 2-vCPU cloud container) parallel over-subscribes the CPU *and*
+    pays that per-worker clone tax — measurably SLOWER than a serial
+    re-simulation, which is exactly what the gate guards against.
     """
     effective = _effective_cpu_count()
-    workers = max(1, min(_MAX_REASSESSMENT_WORKERS, effective, n_actions))
+    workers = max(1, min(_max_reassessment_workers(), effective, n_actions))
     return effective, workers
+
+
+def _estimate_worker_memory_bytes(buffer_nbytes: int) -> int:
+    """Memory one worker costs for a network serialised to ``buffer_nbytes``
+    (see :data:`_WORKER_MEMORY_PER_BUFFER_BYTE`)."""
+    return int(_WORKER_MEMORY_PER_BUFFER_BYTE * buffer_nbytes
+               + _WORKER_MEMORY_FIXED_BYTES)
+
+
+def _memory_worker_cap(buffer_nbytes: int) -> Optional[int]:
+    """How many workers the memory budget holds, or ``None`` when unknown.
+
+    Each worker loads its own copy of the network serialised to
+    ``buffer_nbytes``; the copies may take :data:`_WORKER_MEMORY_BUDGET` of
+    the available memory (:func:`_available_memory_bytes`).
+    """
+    available = _available_memory_bytes()
+    if available is None:
+        return None
+    return int(available * _WORKER_MEMORY_BUDGET
+               // _estimate_worker_memory_bytes(buffer_nbytes))
 
 
 def _make_worker_baseline_obs(binary_buffer, thermal_limits):
@@ -406,9 +521,9 @@ def reassess_prioritized_actions(
         # network copy) or serially, then turned into cards in original order.
         sim_out: Dict[str, tuple] = {}
         used_workers = 1
+        memory_note = ""
 
-        if _should_parallelize_reassessment(is_pypowsybl, workers, n_actions,
-                                            fast_mode=actual_fast_mode):
+        if _should_parallelize_reassessment(is_pypowsybl, workers, n_actions):
             try:
                 main_nm = obs_simu_defaut._network_manager
                 # Capture the N-1 baseline (contingency + maintenance) variant so
@@ -417,26 +532,34 @@ def reassess_prioritized_actions(
                 main_nm.set_working_variant(obs_simu_defaut._variant_id)
                 binary_buffer = main_nm.network.save_to_binary_buffer()
                 main_nm.set_working_variant(main_nm.base_variant_id)
-                thermal_limits = obs_simu_defaut._thermal_limits
-                buckets = [action_items[i::workers] for i in range(workers)]
+                # Every worker loads its own copy of the network: start no more
+                # copies than the memory budget holds, then re-run the gate on
+                # that pool (auto mode may now stay serial).
+                memory_cap = _memory_worker_cap(binary_buffer.getbuffer().nbytes)
+                if memory_cap is not None and memory_cap < workers:
+                    memory_note = f", pool capped from {workers} by the available memory"
+                    workers = memory_cap
+                if _should_parallelize_reassessment(is_pypowsybl, workers, n_actions):
+                    thermal_limits = obs_simu_defaut._thermal_limits
+                    buckets = [action_items[i::workers] for i in range(workers)]
 
-                def _run_bucket(bucket):
-                    _, wobs_defaut = _make_worker_baseline_obs(
-                        binary_buffer, thermal_limits,
-                    )
-                    local = {}
-                    for aid, act in bucket:
-                        oa, _, _, info = wobs_defaut.simulate(
-                            act, time_step=current_timestep, keep_variant=True,
-                            fast_mode=actual_fast_mode,
+                    def _run_bucket(bucket):
+                        _, wobs_defaut = _make_worker_baseline_obs(
+                            binary_buffer, thermal_limits,
                         )
-                        local[aid] = (oa, info)
-                    return local
+                        local = {}
+                        for aid, act in bucket:
+                            oa, _, _, info = wobs_defaut.simulate(
+                                act, time_step=current_timestep, keep_variant=True,
+                                fast_mode=actual_fast_mode,
+                            )
+                            local[aid] = (oa, info)
+                        return local
 
-                with ThreadPoolExecutor(max_workers=workers) as pool:
-                    for part in pool.map(_run_bucket, buckets):
-                        sim_out.update(part)
-                used_workers = workers
+                    with ThreadPoolExecutor(max_workers=workers) as pool:
+                        for part in pool.map(_run_bucket, buckets):
+                            sim_out.update(part)
+                    used_workers = workers
             except Exception as exc:  # pragma: no cover - defensive fallback
                 logger.warning(
                     "Parallel reassessment failed (%s); falling back to serial.",
@@ -477,7 +600,7 @@ def reassess_prioritized_actions(
         print(
             f"[Reassessment] {n_actions} action(s) re-simulated on "
             f"{used_workers}/{cores} effective core(s) "
-            f"({'parallel' if used_workers > 1 else 'serial'})."
+            f"({'parallel' if used_workers > 1 else 'serial'}{memory_note})."
         )
 
     pre_existing_info = [

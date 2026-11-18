@@ -256,13 +256,21 @@ class Settings(BaseSettings):
     #   REASSESSMENT_PARALLEL:
     #     None  (default) -> auto: parallelise only when enough effective cores
     #                        are available (see REASSESSMENT_MIN_PARALLEL_CORES)
-    #     True            -> force parallel (still bounded by cores / n_actions)
+    #                        and every worker gets at least 6 actions — below
+    #                        that the network copies cost more than they save
+    #     True            -> force parallel (still bounded by cores / n_actions
+    #                        / REASSESSMENT_MAX_WORKERS / available memory)
     #     False           -> force serial (recommended on 2-vCPU deployments;
     #                        set env EXPERT_OP4GRID_REASSESSMENT_PARALLEL=0)
     REASSESSMENT_PARALLEL: Optional[bool] = None
     # In auto mode, the minimum number of *effective* (container-aware) cores
     # required before the reassessment parallelises. Below it, serial.
     REASSESSMENT_MIN_PARALLEL_CORES: int = Field(default=4, ge=1)
+    # Cap on the worker threads, i.e. on the private network copies held in
+    # memory at once (1 = always serial). The available memory caps the pool
+    # further: the copies may take half of it, at an estimated ~1.25 GB each
+    # for full France (160x the network's 7.5 MB binary size, plus 64 MB).
+    REASSESSMENT_MAX_WORKERS: int = Field(default=10, ge=1)
 
     # -------------------
     #  Expert system parameters
