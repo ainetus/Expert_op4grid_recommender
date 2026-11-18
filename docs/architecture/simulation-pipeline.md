@@ -497,7 +497,7 @@ a flagged main network nor a flagged copy can be driven from there. Without
 the flag, `run_ac_async` races on the global working variant and returns
 wrong currents. The design becomes possible if pypowsybl keeps its isolate
 thread attached for the life of a Python thread, or takes a variant id on its
-getters and updaters.
+getters and updaters (tracked in marota/Expert_op4grid_recommender#8).
 
 ## 7. Thermal limits & overload calculation
 
