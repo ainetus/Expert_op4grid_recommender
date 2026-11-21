@@ -460,6 +460,8 @@ tests/
 ├── test_superposition_action_types.py   # Superposition per action type
 ├── test_superposition_identification.py # Superposition target identification
 ├── test_superposition_rho_estimation.py # Virtual-flow rho estimation
+├── test_superposition_node_split_injections.py # Node split moving a generator to bus 2:
+│                                        # sub_topology after simulate() + DC-exact pair
 ├── test_lazy_action_dict.py             # LazyActionDict (v0.1.5+)
 ├── test_min_action_counts.py            # MIN_* enforcement
 ├── test_islanding_mw.py                 # Islanding MW quantification (v0.1.8+)
