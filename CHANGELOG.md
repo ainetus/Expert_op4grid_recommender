@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the state it describes, with the same numbering as the line ends. Synthetic
   topologies that keep every injection on the first busbar section (the
   PyPSA-EUR grids) were not affected.
+- **The virtual-line flow of a node split counts production with the right
+  sign on pypowsybl.** `get_virtual_line_flow` added `gen_p` as production,
+  but a pypowsybl observation reports a producing generator with a negative
+  `gen_p` (receptor convention, the bug already fixed for the antenna graph
+  through `utils/injections.py`): every generator on node 1 shifted the flow
+  by twice its output, and the betas of the pairs involving the split moved
+  with it. The flow now goes through `production_mw` / `consumption_mw`. On
+  the same case, the split paired with curtailing the 13 MW wind farm that
+  stays on node 1 (`CRENEIN1`) still came out 1.2 points low after the fix
+  above (beta 1.10 instead of 0.97). With both fixes, the eight pairs tested
+  on that contingency are within 0.04 point of the simulation and the
+  largest flow error is 0.6 MW. Co-Study4Grid's virtual-line MW for coupler
+  openings goes through the same function.
 
 ## [0.3.4.post1] - 2026-11-18
 
