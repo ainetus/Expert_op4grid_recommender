@@ -114,8 +114,12 @@ class PypowsyblObservation:
         # Get angles per line terminal - pass pre-fetched bus data (full DataFrame for VL fallback)
         self._compute_line_angles(reindexed_flows, bus_data_df)
 
+        # Local bus numbers (1, 2, ...) per voltage level, shared by the line
+        # terminals and the injections so that both read the same numbering
+        bus_to_rank = self._local_bus_ranks(bus_data_df)
+
         # Compute bus assignments for line terminals - pass pre-fetched data
-        self._compute_line_buses(reindexed_flows, bus_data_df)
+        self._compute_line_buses(reindexed_flows, bus_to_rank)
 
         # Compute line terminal voltages (with VL fallback for disconnected terminals)
         self._compute_line_voltages(reindexed_flows, bus_data_df)
@@ -129,15 +133,21 @@ class PypowsyblObservation:
         # Load and generation - ensure alignment with name_load/name_gen.
         # Single get_loads() call (with bus_id) reused for both the aligned
         # load arrays and the per-component load below.
-        loads_full = net.get_loads()[['p', 'q', 'bus_id']]
-        loads_df = loads_full[['p', 'q']].reindex(nm.name_load)
-        gens_df = net.get_generators()[['p', 'q', 'energy_source', 'target_p']].reindex(nm.name_gen)
+        loads_full = net.get_loads()[['p', 'q', 'bus_id', 'connected']]
+        loads_df = loads_full.reindex(nm.name_load)
+        gens_df = net.get_generators()[
+            ['p', 'q', 'energy_source', 'target_p', 'bus_id', 'connected']].reindex(nm.name_gen)
         self._load_p = loads_df['p'].fillna(0.0).values
         self._load_q = loads_df['q'].fillna(0.0).values
         self._gen_p = gens_df['p'].fillna(0.0).values
         self._gen_q = gens_df['q'].fillna(0.0).values
         self._gen_type = gens_df['energy_source'].fillna("UNKNOWN").values
         self._gen_target_p = gens_df['target_p'].values.astype(float)
+
+        # Bus assignments of loads and generators, read now from this state
+        # (see _compute_injection_buses)
+        self._load_bus_cache = self._compute_injection_buses(loads_df, bus_to_rank)
+        self._gen_bus_cache = self._compute_injection_buses(gens_df, bus_to_rank)
 
         # Connected components and main component load - reuse bus_data_df
         # (fetched once above) instead of re-calling get_buses() twice.
@@ -262,21 +272,37 @@ class PypowsyblObservation:
         z = np.where(z < 1e-10, 1e-10, z)
         self._line_cos_phi = np.abs(self._line_x) / z
 
-    def _compute_line_buses(self, terminals: pd.DataFrame, buses_df: pd.DataFrame):
+    @staticmethod
+    def _local_bus_ranks(buses_df: pd.DataFrame) -> pd.Series:
+        """Local bus number (1, 2, ...) of each bus within its voltage level, by bus id."""
+        if buses_df.empty:
+            return pd.Series(dtype=int)
+        # Sort by ID within each VL to ensure consistent 1, 2 numbering
+        buses_sorted = buses_df.sort_index()
+        # cumcount() gives 0, 1, ... so add 1 for bus numbers
+        return buses_sorted.groupby('voltage_level_id').cumcount() + 1
+
+    @staticmethod
+    def _compute_injection_buses(injections: pd.DataFrame, bus_to_rank: pd.Series) -> np.ndarray:
+        """Bus assignments of loads or generators: 1, 2, ... or -1 when disconnected.
+
+        Computed while the observation is built, i.e. while the working variant
+        is the state it describes. ``simulate()`` hands the working variant back
+        to the base variant, so reading it later from ``sub_topology()`` returned
+        the base topology for every load and generator: those of a split
+        substation all stayed on bus 1 while its line ends followed the split,
+        and the superposition virtual-line flow (``get_sub_node1_idsflow``) was
+        wrong.
+        """
+        connected = injections['connected'].fillna(True).astype(bool).values
+        rank = injections['bus_id'].map(bus_to_rank).fillna(1).astype(int).values
+        return np.where(connected & injections['bus_id'].notna().values, rank, -1)
+
+    def _compute_line_buses(self, terminals: pd.DataFrame, bus_to_rank: pd.Series):
         """Compute bus assignments for line terminals. OPTIMIZED with vectorization."""
         # terminals is already reindexed to nm.name_line
-        
-        # 1. Pre-calculate local bus ranks (1, 2, ...) per Voltage Level
-        if not buses_df.empty:
-            # Sort by ID within each VL to ensure consistent 1, 2 numbering
-            buses_sorted = buses_df.sort_index()
-            # cumcount() gives 0, 1, ... so add 1 for bus numbers
-            buses_sorted['rank'] = buses_sorted.groupby('voltage_level_id').cumcount() + 1
-            bus_to_rank = buses_sorted['rank']
-        else:
-            bus_to_rank = pd.Series(dtype=int)
 
-        # 2. Map ranks and handle disconnections
+        # Map ranks and handle disconnections
         # Default connected to True if missing (transformers often connected)
         # Fix downcasting warnings by casting to bool after fillna
         conn1 = terminals['connected1'].fillna(True).astype(bool).values
@@ -567,11 +593,8 @@ class PypowsyblObservation:
 
         bus_assignments = []
 
-        # Ensure we have cached bus info for loads and gens
-        if not hasattr(self, '_load_bus_cache'):
-            self._cache_element_buses()
-
-        # Get bus assignments for loads
+        # Get bus assignments for loads (built with the observation, see
+        # _compute_injection_buses)
         for load_idx in load_indices:
             bus_assignments.append(self._load_bus_cache[load_idx])
 
@@ -588,65 +611,6 @@ class PypowsyblObservation:
             bus_assignments.append(int(self._line_ex_bus[line_idx]))
 
         return np.array(bus_assignments, dtype=int)
-
-    def _cache_element_buses(self):
-        """Cache bus assignments for loads and generators."""
-        nm = self._network_manager
-        net = nm.network
-
-        # Get DataFrames once
-        loads_df = net.get_loads()
-        gens_df = net.get_generators()
-        buses_df = net.get_buses()
-
-        # Build voltage level -> sorted bus list mapping
-        bus_to_vl = buses_df['voltage_level_id'].to_dict() if len(buses_df) > 0 else {}
-        vl_to_buses = {}
-        for bus_id, vl_id in bus_to_vl.items():
-            if vl_id not in vl_to_buses:
-                vl_to_buses[vl_id] = []
-            vl_to_buses[vl_id].append(bus_id)
-
-        # Build local bus number lookup
-        vl_bus_to_local = {}
-        for vl_id, bus_list in vl_to_buses.items():
-            sorted_buses = sorted(bus_list)
-            for idx, bus_id in enumerate(sorted_buses):
-                vl_bus_to_local[(vl_id, bus_id)] = idx + 1
-
-        # Cache load bus assignments
-        self._load_bus_cache = np.ones(nm._n_load, dtype=int)
-        if len(loads_df) > 0:
-            load_bus_ids = loads_df['bus_id'].to_dict() if 'bus_id' in loads_df.columns else {}
-            load_connected = loads_df['connected'].to_dict() if 'connected' in loads_df.columns else {}
-            load_vl_ids = loads_df['voltage_level_id'].to_dict() if 'voltage_level_id' in loads_df.columns else {}
-
-            for i, load_id in enumerate(nm._load_ids):
-                bus_id = load_bus_ids.get(load_id)
-                connected = load_connected.get(load_id, True)
-                vl_id = load_vl_ids.get(load_id, '')
-
-                if pd.isna(bus_id) or not connected:
-                    self._load_bus_cache[i] = -1
-                else:
-                    self._load_bus_cache[i] = vl_bus_to_local.get((vl_id, bus_id), 1)
-
-        # Cache generator bus assignments
-        self._gen_bus_cache = np.ones(nm._n_gen, dtype=int)
-        if len(gens_df) > 0:
-            gen_bus_ids = gens_df['bus_id'].to_dict() if 'bus_id' in gens_df.columns else {}
-            gen_connected = gens_df['connected'].to_dict() if 'connected' in gens_df.columns else {}
-            gen_vl_ids = gens_df['voltage_level_id'].to_dict() if 'voltage_level_id' in gens_df.columns else {}
-
-            for i, gen_id in enumerate(nm._gen_ids):
-                bus_id = gen_bus_ids.get(gen_id)
-                connected = gen_connected.get(gen_id, True)
-                vl_id = gen_vl_ids.get(gen_id, '')
-
-                if pd.isna(bus_id) or not connected:
-                    self._gen_bus_cache[i] = -1
-                else:
-                    self._gen_bus_cache[i] = vl_bus_to_local.get((vl_id, bus_id), 1)
 
     def _get_local_bus_number(self, bus_id: str, vl_id: str) -> int:
         """

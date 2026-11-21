@@ -28,6 +28,8 @@ import numpy as np
 from itertools import combinations
 from typing import Dict, List, Tuple, Any, Optional
 
+from expert_op4grid_recommender.utils.injections import consumption_mw, production_mw
+
 
 # =============================================================================
 # Low-level helper functions (adapted from superposition_theorem/core)
@@ -185,11 +187,15 @@ def get_virtual_line_flow(obs, ind_load, ind_prod, ind_lor, ind_lex) -> float:
     Returns:
         Virtual line active power flow (MW)
     """
+    # Production counted positive on both backends: a pypowsybl observation
+    # reports a producing generator with a negative gen_p (receptor convention)
+    production = production_mw(obs)
+    consumption = consumption_mw(obs)
     flow = 0.0
     flow += sum(-obs.p_or[i] for i in ind_lor)
     flow += sum(obs.p_or[i] for i in ind_lex)  # p_ex flows in opposite direction
-    flow += sum(-obs.load_p[i] for i in ind_load)
-    flow += sum(obs.gen_p[i] for i in ind_prod)
+    flow += sum(-consumption[i] for i in ind_load)
+    flow += sum(production[i] for i in ind_prod)
     return flow
 
 

@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Superposition pairs involving a node split now see the loads and
+  generators that move to bus 2.** `PypowsyblObservation.sub_topology()` read
+  the load and generator buses lazily from the network's current working
+  variant, which `simulate()` hands back to the base variant. After a coupler
+  opening, every load and generator of the split substation therefore stayed
+  on bus 1 while its line ends followed the split: `get_sub_node1_idsflow`
+  counted them on node 1, so the virtual-line flow of the split and the betas
+  of every pair involving it were wrong. On the reconstructed RTE France grid,
+  coupler `CRENEP6` (contingency `CRENEL71REVIG`) moves 175 MW of load and a
+  26 MW wind farm to bus 2: paired with curtailing that farm, the split got
+  beta 2.68 instead of 1.06 and the estimated max loading came out 94.0 %
+  against 97.5 % simulated (97.4 % once fixed); the largest flow error fell
+  from 333 MW to 1.7 MW. The buses are now computed with the observation, from
+  the state it describes, with the same numbering as the line ends. Synthetic
+  topologies that keep every injection on the first busbar section (the
+  PyPSA-EUR grids) were not affected.
+- **The virtual-line flow of a node split counts production with the right
+  sign on pypowsybl.** `get_virtual_line_flow` added `gen_p` as production,
+  but a pypowsybl observation reports a producing generator with a negative
+  `gen_p` (receptor convention, the bug already fixed for the antenna graph
+  through `utils/injections.py`): every generator on node 1 shifted the flow
+  by twice its output, and the betas of the pairs involving the split moved
+  with it. The flow now goes through `production_mw` / `consumption_mw`. On
+  the same case, the split paired with curtailing the 13 MW wind farm that
+  stays on node 1 (`CRENEIN1`) still came out 1.2 points low after the fix
+  above (beta 1.10 instead of 0.97). With both fixes, the eight pairs tested
+  on that contingency are within 0.04 point of the simulation and the
+  largest flow error is 0.6 MW. Co-Study4Grid's virtual-line MW for coupler
+  openings goes through the same function.
+
 ## [0.3.4.post1] - 2026-11-18
 
 ### Fixed

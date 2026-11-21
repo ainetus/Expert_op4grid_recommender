@@ -123,7 +123,7 @@ La méthode **`simulate()`** est le point névralgique. Elle :
 - `_refresh_state()` est passé de boucles Python avec `df.loc` à des opérations vectorisées pandas/numpy (`.reindex()`, `.map()`, `.fillna().values`)
 - `_compute_rho()` utilise désormais des arrays numpy au lieu de boucles sur chaque ligne
 - `_compute_line_angles()` et `_compute_line_buses()` utilisent `.map()` sur des Series au lieu de boucles individuelles
-- Le caching des bus par élément (`_cache_element_buses`) a été ajouté pour éviter de recalculer les assignations de bus à chaque appel à `sub_topology()`
+- Les assignations de bus des charges et des groupes sont calculées une fois dans `_refresh_state()` (`_compute_injection_buses()`, même numérotation que les extrémités de lignes) pour ne pas les recalculer à chaque appel à `sub_topology()`. Elles ne doivent pas être lues plus tard sur le réseau : `simulate()` rend la variante de base comme variante de travail, et l'ancien cache paresseux (`_cache_element_buses`) laissait ainsi au nœud 1 toutes les injections d'un poste scindé
 
 L'`ObservationWithTopologyOverride` est un pattern intéressant : quand on fait `obs + action` en Grid2Op, on obtient une vue de ce à quoi la topologie **ressemblerait** après l'action, sans la simuler réellement (pas de load flow). Cette classe wrape l'observation de base et override uniquement les propriétés topologiques.
 
