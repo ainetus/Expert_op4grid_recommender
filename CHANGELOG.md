@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4.post2] - 2026-11-21
+
 ### Fixed
 
 - **Superposition pairs involving a node split now see the loads and
@@ -26,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from 333 MW to 1.7 MW. The buses are now computed with the observation, from
   the state it describes, with the same numbering as the line ends. Synthetic
   topologies that keep every injection on the first busbar section (the
-  PyPSA-EUR grids) were not affected.
+  PyPSA-EUR grids) were not affected (#133).
 - **The virtual-line flow of a node split counts production with the right
   sign on pypowsybl.** `get_virtual_line_flow` added `gen_p` as production,
   but a pypowsybl observation reports a producing generator with a negative
@@ -39,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above (beta 1.10 instead of 0.97). With both fixes, the eight pairs tested
   on that contingency are within 0.04 point of the simulation and the
   largest flow error is 0.6 MW. Co-Study4Grid's virtual-line MW for coupler
-  openings goes through the same function.
+  openings goes through the same function (#133).
 
 ## [0.3.4.post1] - 2026-11-18
 
